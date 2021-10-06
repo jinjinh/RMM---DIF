@@ -1,0 +1,1709 @@
+---
+title: "DIF_LCStructureRecovery"
+author: "Jinjin Huang"
+date: "7/17/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r, warning = FALSE}
+library(mirt)
+library(psychomix)
+```
+
+
+### Generating Datasets
+## Generating Parameters
+```{r}
+
+# List delta_b for symmetric DIF patterns
+d_b_1002s <- c(-1.8, 1.8, 0, 0, 0, 0, 0, 0, 0 ,0)
+d_b_1004s <- c(-1.8, -0.9, 0.9, 1.8, 0, 0 ,0, 0, 0, 0)
+d_b_1006s <- c(-1.8, -1.2, -0.6, 0.6, 1.2 ,1.8, 0, 0 ,0 ,0)
+d_b_3006s <- c(-1.8, -1.2, -0.6, 0.6, 1.2 ,1.8, 0, 0 ,0 ,0, 0, 0 ,0 ,0, 0, 0 ,0 ,0, 0, 0 ,0 ,0, 0, 0 ,0 ,0, 0, 0 ,0 ,0)
+d_b_3012s <- c(-1.8, -1.5, -1.2, -0.9, -0.6, -0.3, 0.3, 0.6, 0.9, 1.2, 1.5, 1.8,0, 0, 0 ,0 ,0, 0, 0, 0 ,0 ,0 ,0, 0, 0 ,0 ,0 ,0, 0, 0)
+d_b_3018s <- c(-1.8, -1.6, -1.4, -1.2, -1.0, -0.8, -0.6, -0.4, -0.2, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4, 1.6, 1.8, 0, 0 ,0 ,0, 0, 0 ,0 ,0, 0, 0 ,0 ,0)   
+
+# list delta_b for gradient DIF patterns
+d_b_1002g <- c(2.0, 1.0, 0, 0, 0, 0, 0, 0, 0 ,0)
+d_b_1004g <- c(2.0, 1.5, 1.0, 0.5, 0, 0, 0, 0, 0 ,0)
+d_b_1006g <- c(2.0, 1.7, 1.4, 1.1, 0.8, 0.5, 0, 0, 0, 0)
+d_b_3006g <- c(2.0, 1.7, 1.4, 1.1, 0.8, 0.5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+d_b_3012g <- c(2.0, 1.8, 1.6, 1.4, 1.2, 1.0, 0.8, 0.6, 0.4, 0.3, 0.2, 0.1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+d_b_3018g <- c(1.8, 1.7, 1.6, 1.5, 1.4, 1.3, 1.2, 1.1, 1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+
+# Create 4 variables to store DIF patterns
+s_dif_10items <- cbind(d_b_1002s, d_b_1004s, d_b_1006s)
+s_dif_30items <- cbind(d_b_3006s, d_b_3012s, d_b_3018s)
+
+g_dif_10items <- cbind(d_b_1002g, d_b_1004g, d_b_1006g)
+g_dif_30items <- cbind(d_b_3006g, d_b_3012g, d_b_3018g)
+```
+
+
+## Responses Generating Function 
+```{r}
+gen_response <- function(n_item, size, dif){ 
+  b_0 <- matrix(rnorm(n_item, 0, 1))
+  sigma <- matrix(1)
+  type <- rep('dich', n_item)
+  a <- matrix(rep(1, n_item))
+  df = ''
+  n_lc = length(size)
+  if (n_lc == 2){
+    df_lcr = simdata(a = a, d = b_0, itemtype = type, N = size[1], mu = 0, sigma = sigma)
+    b_lc1 = b_0 + dif
+    df_lcf1 = simdata(a = a, d = b_lc1, itemtype = type, N = size[2], mu = 1, sigma = sigma)
+    #combine reference lc and focal lc datasets
+    df = as.data.frame(rbind(df_lcr, df_lcf1))
+    #add identifiers for each row/observation
+    df$lc = c(rep('lc_r', size[1]), rep('lc_f1', size[2]))
+  } else{
+    df_lcr = simdata(a = a, d = b_0, itemtype = type, N = size[1], mu = 0, sigma = sigma)
+    b_lc1 = b_0 + dif
+    b_lc2 = b_0 + 2*dif
+    df_lcf1 = simdata(a = a, d = b_lc1, itemtype = type, N = size[2], mu = 1, sigma = sigma)
+    df_lcf2 = simdata(a = a, d = b_lc2, itemtype = type, N = size[3], mu = -1, sigma = sigma)
+    #combine lc_r and lc_f1 and lc_f2
+    df = as.data.frame(rbind(df_lcr, df_lcf1, df_lcf2))
+    #add identifiers
+    df$lc = c(rep('lc_r', size[1]), rep('lc_f1', size[2]), rep('lc_f2', size[3]))
+  }
+return(df)
+}
+
+```
+
+
+## Parameter Recovery Simulation Function
+```{r}
+par_reco_sim <- function(dif, size_of_lc){
+  
+  set.seed(123)
+  
+  # Set number of replications
+  n_rep = 200
+  # Set number of items
+  n_item = length(dif)
+  # Number of latent classes
+  n_lc = length(size_of_lc)
+  # Create a matrix to store item difficulty parameters for every replication
+  dif_matrix = matrix(NA, n_rep, n_item)
+  # Matrix for 2*dif for third latent class
+  dif_matrix_2 = matrix(NA, n_rep, n_item)
+  # Create a matrix to store proportion of latent classes
+  p_matrix = matrix(NA, n_rep, n_lc)  
+
+#############################################################################
+
+  if (n_lc == 2){
+    # Simulation Loop
+    for (rep in 1: n_rep){
+      test = gen_response(n_item, size_of_lc, dif)
+      m <- raschmix(as.matrix(test[, 1:n_item]), k = n_lc, scores = "saturated", nrep = 1)
+      results = worth(m)
+      for(j in 1:n_item){
+        dif_matrix[rep, j] = abs(results[j, 2] - results[j, 1])   # Get DIF after a replication
+      }
+      p_matrix[rep, 1] = parameters(m, which = 'concomitant')[1] # Record proportion of latent classes
+      p_matrix[rep, 2] = parameters(m, which = 'concomitant')[2] # Record proportion of latent classes
+    }
+    # Stop the clock and sotre runtime in rt
+    rt = (proc.time() - ptm)[1:3]
+    outcome = cbind(dif_matrix, p_matrix)
+    return(outcome)
+  }
+  else{
+    for (rep in 1: n_rep){
+      test = gen_response(n_item, size_of_lc, dif)
+      m <- raschmix(as.matrix(test[, 1:n_item]), k = n_lc, scores = "saturated", nrep = 1)
+      results = worth(m)
+      for(j in 1:n_item){
+        dif_matrix[rep, j] = abs(results[j, 2] - results[j, 1])   # Get DIF after a replication
+        dif_matrix_2[rep, j] = abs(results[j, 3] - results[j, 1]) # Get 2*DIF between third latent class and referenc latent class
+      }
+      p_matrix[rep, 1] = parameters(m, which = 'concomitant')[1] # Record proportion of latent classes
+      p_matrix[rep, 2] = parameters(m, which = 'concomitant')[2] # Record proportion of latent classes
+      p_matrix[rep, 3] = parameters(m, which = 'concomitant')[3] # Record proportion of latent classes
+    }
+    outcome = cbind(dif_matrix, dif_matrix_2, p_matrix)
+    return(outcome)
+  }    
+}
+```
+
+ 
+## DIF Visualizaiton Function
+```{r}
+dif_viz <- function (dif, dif_sim_matrix){
+  # Number of DIF item
+  n_dif = length(which(dif != 0)) # only graph DIF items
+  
+  if (n_dif %% 6 == 0){
+    if (n_dif==18){
+      par(mfrow=c(3, 3))
+    } else {
+    par(mfrow=c(2, 3))
+    }  
+  } else {
+    if (n_dif==2){
+      par(mfrow=c(1, 2))
+    } else {
+      par(mfrow=c(2, 2))
+    }
+  }
+  for(i in 1: n_dif){
+    true_dif = abs(dif[i])
+    
+    plot(c(1:nrow(dif_sim_matrix)), dif_sim_matrix[, i], type = 'l', ylim = c(0,5), xlab = 'Replication', ylab = 'Recovered DIF', main = paste('Item', toString(i),'True DIF:',toString(true_dif)), cex.lab=1.2, cex.main=1.2, font.main=7)
+    
+    # Add a red horizotal line marking mean of DIF from replications
+    abline(h = mean(dif_sim_matrix[,i]), col = 'red')
+  
+    # Add a green horizontal line marking true DIF
+    abline(h = true_dif, col = 'green')
+    
+    # Add lengend
+    legend('top', legend = c('Mean DIF','True DIF'), lty = 1, col = c('red', 'green'), lwd=2, cex=1, y.intersp=0.5, x.intersp = 0.12, horiz = TRUE, bty="n")
+  }
+}
+```
+
+
+## Classifier Parameter Visualization Function
+```{r}
+p_viz <- function (p_matrix, size){
+  if (length(size) == 2){
+    # True proportion
+    true_p <- round(size[1]/sum(size), 3)
+    p_prior <- apply(p_matrix, 1, max)
+    plot(x = c(1:nrow(p_matrix)),y = p_prior, type = "l", ylim = c(0, 1), xlab = "Replicaiton", ylab = 'Proporiton of Latent Class', main = paste('Two Latent Classes, True Proportion:', toString(true_p)))
+    abline(h = true_p, col = 'green')
+    abline(h = mean(p_prior), col = 'red')
+    legend('topright', legend = c('Mean Proportion','True Proportion'), lty = 1, col = c('red', 'green'))  
+  }
+  else{
+    true_p <- c(round(size[1]/sum(size), 2), round(size[3]/sum(size), 2))
+    p_prior <- cbind( max_p = apply(p_matrix, 1, max), min_p = apply(p_matrix, 1, min))
+    plot(x = c(1:nrow(p_matrix)),y = p_prior[,1], type = "l", ylim = c(0, 1), xlab = "Replicaiton", ylab = 'Proporiton of Latent Class', main = paste('Three Latent Classes, True Proportion:', toString(true_p[1]), toString(true_p[2])))
+    points(x = c(1:nrow(p_matrix)),y = p_prior[,2], type = "l")
+    abline(h = true_p[1], col = 'green', lty = 1)
+    abline(h = true_p[2], col = 'green', lty = 2)
+    abline(h = mean(p_prior[,1]), col = 'red', lty = 1)
+    abline(h = mean(p_prior[,2]), col = 'red', lty = 2)
+    legend('top', legend = c('Ture Max Proportion','True Min Prorpotion', 'Mean Max Proportion', 'Mean Min Proportion'), col = c('green', 'green', 'red', 'red'), lty = c(1, 2, 1, 2))  
+  }
+}
+```
+
+
+
+
+#########################################################################################################
+#########################                Latent Stucture Recovery         ###############################
+#########################################################################################################
+
+
+#################### Set number of replications for all below ##############################
+```{r}
+n_rep = 100
+```
+
+
+## Function for calculating latent structure recovery rate from generated results dataframe
+```{r}
+get_structure_reco_rate <- function (df, lc_Structure) {
+  
+  ## update index to have logical order
+  row.names(df) = seq(1, nrow(df))
+
+  n = length(lc_Structure)
+  count_AIC = 0
+  count_BIC = 0
+  
+  aic_and_bic <- matrix(rep(0, 4), nrow=2, ncol=4)
+  colnames(aic_and_bic) <- c(1:4)
+  rownames(aic_and_bic) <- c("AIC", "BIC")
+  
+  for (i in seq(1, nrow(df), 4)) {
+    start = i
+    end = i + 3
+    temp_df = df[start:end,]
+    
+    k_temp = temp_df$k[which.min(temp_df$AIC)]
+    as.character(k_temp)
+    aic_and_bic["AIC", k_temp] = aic_and_bic["AIC", k_temp] + 1
+    
+    k_temp = temp_df$k[which.min(temp_df$BIC)]
+    as.character(k_temp)
+    aic_and_bic["BIC", k_temp] = aic_and_bic["BIC", k_temp] + 1
+      
+  }
+
+  aic_and_bic = aic_and_bic/n_rep
+  
+  return (aic_and_bic) 
+}
+```
+
+
+############################################## TWO LATENT CLASSES STRUCTURE ########################################################
+
+
+################### Model Recovery - Symmetric Pattern - Two Latent Classes - Equal Size #########################################
+
+
+## Model Recovery 10 Items 2 DIF Sysmmetric Pattern: 1002s - equal size
+```{r}
+set.seed(12345)
+
+# Set number of replications
+#n_rep = 1
+# Set number of items
+n_item = 10
+# Set sample size
+size_of_lc = c(1500, 1500)
+# Set DIF type
+dif_array = d_b_1002s
+# Set number of latent classes
+n_lc = length(size_of_lc)
+# Create list to store model fit data
+mf_lc2_1002s_e = list()
+
+
+for(i in 1:n_rep){
+  test = gen_response(n_item, size_of_lc, dif_array)
+  m2 = raschmix(as.matrix(test[, 1:n_item]), k = 1:4, scores = "saturated", nrep = 1)
+  mf_lc2_1002s_e = rbind(mf_lc2_1002s_e, show(m2))  
+}
+
+## calculate recovery rate
+lcReco_1002s_lc2_e = get_structure_reco_rate(mf_lc2_1002s_e, size_of_lc)
+
+```
+
+
+## Model Recovery 10 Items 4 DIF Sysmmetric Pattern: 1004s - equal size
+```{r}
+set.seed(12345)
+
+# Set number of replications
+#n_rep = 1
+# Set number of items
+n_item = 10
+# Set sample size
+size_of_lc = c(1500, 1500)
+# Set DIF type
+dif_array = d_b_1004s
+# Set number of latent classes
+n_lc = length(size_of_lc)
+# Create list to store model fit data
+mf_lc2_1004s_e = list()
+
+
+for(i in 1:n_rep){
+  test = gen_response(n_item, size_of_lc, dif_array)
+  m2 = raschmix(as.matrix(test[, 1:n_item]), k = 1:4, scores = "saturated", nrep = 1)
+  mf_lc2_1004s_e = rbind(mf_lc2_1004s_e, show(m2))  
+}
+
+## calculate recovery rate
+lcReco_1004s_lc2_e = get_structure_reco_rate(mf_lc2_1004s_e, size_of_lc)
+
+```
+
+## Model Recovery 10 Items 6 DIF Sysmmetric Pattern: 1006s - equal size
+```{r}
+set.seed(12345)
+
+# Set number of replications
+#n_rep = 1
+# Set number of items
+n_item = 10
+# Set sample size
+size_of_lc = c(1500, 1500)
+# Set DIF type
+dif_array = d_b_1006s
+# Set number of latent classes
+n_lc = length(size_of_lc)
+# Create list to store model fit data
+mf_lc2_1006s_e = list()
+
+
+for(i in 1:n_rep){
+  test = gen_response(n_item, size_of_lc, dif_array)
+  m2 = raschmix(as.matrix(test[, 1:n_item]), k = 1:4, scores = "saturated", nrep = 1)
+  mf_lc2_1006s_e = rbind(mf_lc2_1006s_e, show(m2))  
+}
+
+## calculate recovery rate
+lcReco_1006s_lc2_e = get_structure_reco_rate(mf_lc2_1006s_e, size_of_lc)
+
+```
+
+## Model Recovery 30 Items 6 DIF Sysmmetric Pattern: 3006s - equal size
+```{r}
+set.seed(12345)
+
+# Set number of replications
+#n_rep = 1
+# Set number of items
+n_item = 30
+# Set sample size
+size_of_lc = c(1500, 1500)
+# Set DIF type
+dif_array = d_b_3006s
+# Set number of latent classes
+n_lc = length(size_of_lc)
+# Create list to store model fit data
+mf_lc2_3006s_e = list()
+
+
+for(i in 1:n_rep){
+  test = gen_response(n_item, size_of_lc, dif_array)
+  m2 = raschmix(as.matrix(test[, 1:n_item]), k = 1:4, scores = "saturated", nrep = 1)
+  mf_lc2_3006s_e = rbind(mf_lc2_3006s_e, show(m2))  
+}
+
+## calculate recovery rate
+lcReco_3006s_lc2_e = get_structure_reco_rate(mf_lc2_3006s_e, size_of_lc)
+
+```
+
+## Model Recovery 30 Items 12 DIF Sysmmetric Pattern: 3012s - equal size
+```{r}
+set.seed(12345)
+
+# Set number of replications
+#n_rep = 1
+# Set number of items
+n_item = 30
+# Set sample size
+size_of_lc = c(1500, 1500)
+# Set DIF type
+dif_array = d_b_3012s
+# Set number of latent classes
+n_lc = length(size_of_lc)
+# Create list to store model fit data
+mf_lc2_3012s_e = list()
+
+
+for(i in 1:n_rep){
+  test = gen_response(n_item, size_of_lc, dif_array)
+  m2 = raschmix(as.matrix(test[, 1:n_item]), k = 1:4, scores = "saturated", nrep = 1)
+  mf_lc2_3012s_e = rbind(mf_lc2_3012s_e, show(m2))  
+}
+
+## calculate recovery rate
+lcReco_3012s_lc2_e = get_structure_reco_rate(mf_lc2_3012s_e, size_of_lc)
+
+```
+
+## Model Recovery 30 Items 18 DIF Sysmmetric Pattern: 3018s - equal size
+```{r}
+set.seed(12345)
+
+# Set number of replications
+#n_rep = 30
+# Set number of items
+n_item = 30
+# Set sample size
+size_of_lc = c(1500, 1500)
+# Set DIF type
+dif_array = d_b_3018s
+# Set number of latent classes
+n_lc = length(size_of_lc)
+# Create list to store model fit data
+mf_lc2_3018s_e = list()
+
+
+for(i in 1:n_rep){
+  test = gen_response(n_item, size_of_lc, dif_array)
+  m2 = raschmix(as.matrix(test[, 1:n_item]), k = 1:4, scores = "saturated", nrep = 1)
+  mf_lc2_3018s_e = rbind(mf_lc2_3018s_e, show(m2))  
+}
+
+## calculate recovery rate
+lcReco_3018s_lc2_e = get_structure_reco_rate(mf_lc2_3018s_e, size_of_lc)
+
+```
+
+################ Model Recovery - Symmetric Pattern - Two Latent Classes - Unequal Size ############################################
+
+
+## Model Recovery 10 Items 2 DIF Sysmmetric Pattern: 1002s - unequal size
+```{r}
+set.seed(12345)
+
+# Set number of replications
+#n_rep = 1
+# Set number of items
+n_item = 10
+# Set sample size
+size_of_lc = c(2000, 1000)
+# Set DIF type
+dif_array = d_b_1002s
+# Set number of latent classes
+n_lc = length(size_of_lc)
+# Create list to store model fit data
+mf_lc2_1002s_u = list()
+
+
+for(i in 1:n_rep){
+  test = gen_response(n_item, size_of_lc, dif_array)
+  m2 = raschmix(as.matrix(test[, 1:n_item]), k = 1:4, scores = "saturated", nrep = 1)
+  mf_lc2_1002s_u = rbind(mf_lc2_1002s_u, show(m2))  
+}
+
+## calculate recovery rate
+lcReco_1002s_lc2_u = get_structure_reco_rate(mf_lc2_1002s_u, size_of_lc)
+
+```
+
+## Model Recovery 10 Items 4 DIF Sysmmetric Pattern: 1004s - unequal size
+```{r}
+set.seed(12345)
+
+# Set number of replications
+#n_rep = 1
+# Set number of items
+n_item = 10
+# Set sample size
+size_of_lc = c(2000, 1000)
+# Set DIF type
+dif_array = d_b_1004s
+# Set number of latent classes
+n_lc = length(size_of_lc)
+# Create list to store model fit data
+mf_lc2_1004s_u = list()
+
+
+for(i in 1:n_rep){
+  test = gen_response(n_item, size_of_lc, dif_array)
+  m2 = raschmix(as.matrix(test[, 1:n_item]), k = 1:4, scores = "saturated", nrep = 1)
+  mf_lc2_1004s_u = rbind(mf_lc2_1004s_u, show(m2))  
+}
+
+## calculate recovery rate
+lcReco_1004s_lc2_u = get_structure_reco_rate(mf_lc2_1004s_u, size_of_lc)
+
+```
+
+## Model Recovery 10 Items 6 DIF Sysmmetric Pattern: 1006s - unequal size
+```{r}
+set.seed(12345)
+
+# Set number of replications
+#n_rep = 1
+# Set number of items
+n_item = 10
+# Set sample size
+size_of_lc = c(2000, 1000)
+# Set DIF type
+dif_array = d_b_1006s
+# Set number of latent classes
+n_lc = length(size_of_lc)
+# Create list to store model fit data
+mf_lc2_1006s_u = list()
+
+
+for(i in 1:n_rep){
+  test = gen_response(n_item, size_of_lc, dif_array)
+  m2 = raschmix(as.matrix(test[, 1:n_item]), k = 1:4, scores = "saturated", nrep = 1)
+  mf_lc2_1006s_u = rbind(mf_lc2_1006s_u, show(m2))  
+}
+
+## calculate recovery rate
+lcReco_1006s_lc2_u = get_structure_reco_rate(mf_lc2_1006s_u, size_of_lc)
+
+```
+
+## Model Recovery 30 Items 6 DIF Sysmmetric Pattern: 3006s - unequal size
+```{r}
+set.seed(12345)
+
+# Set number of replications
+#n_rep = 1
+# Set number of items
+n_item = 30
+# Set sample size
+size_of_lc = c(2000, 1000)
+# Set DIF type
+dif_array = d_b_3006s
+# Set number of latent classes
+n_lc = length(size_of_lc)
+# Create list to store model fit data
+mf_lc2_3006s_u = list()
+
+
+for(i in 1:n_rep){
+  test = gen_response(n_item, size_of_lc, dif_array)
+  m2 = raschmix(as.matrix(test[, 1:n_item]), k = 1:4, scores = "saturated", nrep = 1)
+  mf_lc2_3006s_u = rbind(mf_lc2_3006s_u, show(m2))  
+}
+
+## calculate recovery rate
+lcReco_3006s_lc2_u = get_structure_reco_rate(mf_lc2_3006s_u, size_of_lc)
+
+```
+
+## Model Recovery 30 Items 12 DIF Sysmmetric Pattern: 3012s - unequal size
+```{r}
+set.seed(12345)
+
+# Set number of replications
+#n_rep = 3
+# Set number of items
+n_item = 30
+# Set sample size
+size_of_lc = c(2000, 1000)
+# Set DIF type
+dif_array = d_b_3012s
+# Set number of latent classes
+n_lc = length(size_of_lc)
+# Create list to store model fit data
+mf_lc2_3012s_u = list()
+
+
+for(i in 1:n_rep){
+  test = gen_response(n_item, size_of_lc, dif_array)
+  m2 = raschmix(as.matrix(test[, 1:n_item]), k = 1:4, scores = "saturated", nrep = 1)
+  mf_lc2_3012s_u = rbind(mf_lc2_3012s_u, show(m2))  
+}
+
+## calculate recovery rate
+lcReco_3012s_lc2_u = get_structure_reco_rate(mf_lc2_3012s_u, size_of_lc)
+
+```
+
+## Model Recovery 30 Items 18 DIF Sysmmetric Pattern: 3018s - unequal size
+```{r}
+set.seed(12345)
+
+# Set number of replications
+#n_rep = 3
+# Set number of items
+n_item = 30
+# Set sample size
+size_of_lc = c(2000, 1000)
+# Set DIF type
+dif_array = d_b_3018s
+# Set number of latent classes
+n_lc = length(size_of_lc)
+# Create list to store model fit data
+mf_lc2_3018s_u = list()
+
+
+for(i in 1:n_rep){
+  test = gen_response(n_item, size_of_lc, dif_array)
+  m2 = raschmix(as.matrix(test[, 1:n_item]), k = 1:4, scores = "saturated", nrep = 1)
+  mf_lc2_3018s_u = rbind(mf_lc2_3018s_u, show(m2))  
+}
+
+## calculate recovery rate
+lcReco_3018s_lc2_u = get_structure_reco_rate(mf_lc2_3018s_u, size_of_lc)
+
+```
+
+
+################### Model Recovery - Gradient Pattern - Two Latent Classes - Equal Size ############################################
+
+
+## Model Recovery 10 Items 2 DIF Gradient Pattern: 1002g - equal size
+```{r}
+set.seed(12345)
+
+# Set number of replications
+#n_rep = 1
+# Set number of items
+n_item = 10
+# Set sample size
+size_of_lc = c(1500, 1500)
+# Set DIF type
+dif_array = d_b_1002g
+# Set number of latent classes
+n_lc = length(size_of_lc)
+# Create list to store model fit data
+mf_lc2_1002g_e = list()
+
+
+for(i in 1:n_rep){
+  test = gen_response(n_item, size_of_lc, dif_array)
+  m2 = raschmix(as.matrix(test[, 1:n_item]), k = 1:4, scores = "saturated", nrep = 1)
+  mf_lc2_1002g_e = rbind(mf_lc2_1002g_e, show(m2))  
+}
+
+## calculate recovery rate
+lcReco_1002g_lc2_e = get_structure_reco_rate(mf_lc2_1002g_e, size_of_lc)
+
+```
+
+## Model Recovery 10 Items 4 DIF Gradient Pattern: 1004g - equal size
+```{r}
+set.seed(12345)
+
+# Set number of replications
+#n_rep = 1
+# Set number of items
+n_item = 10
+# Set sample size
+size_of_lc = c(1500, 1500)
+# Set DIF type
+dif_array = d_b_1004g
+# Set number of latent classes
+n_lc = length(size_of_lc)
+# Create list to store model fit data
+mf_lc2_1004g_e = list()
+
+
+for(i in 1:n_rep){
+  test = gen_response(n_item, size_of_lc, dif_array)
+  m2 = raschmix(as.matrix(test[, 1:n_item]), k = 1:4, scores = "saturated", nrep = 1)
+  mf_lc2_1004g_e = rbind(mf_lc2_1004g_e, show(m2))  
+}
+
+## calculate recovery rate
+lcReco_1004g_lc2_e = get_structure_reco_rate(mf_lc2_1004g_e, size_of_lc)
+
+```
+
+## Model Recovery 10 Items 6 DIF Gradient Pattern: 1006g - equal size
+```{r}
+set.seed(12345)
+
+# Set number of replications
+#n_rep = 1
+# Set number of items
+n_item = 10
+# Set sample size
+size_of_lc = c(1500, 1500)
+# Set DIF type
+dif_array = d_b_1006g
+# Set number of latent classes
+n_lc = length(size_of_lc)
+# Create list to store model fit data
+mf_lc2_1006g_e = list()
+
+
+for(i in 1:n_rep){
+  test = gen_response(n_item, size_of_lc, dif_array)
+  m2 = raschmix(as.matrix(test[, 1:n_item]), k = 1:4, scores = "saturated", nrep = 1)
+  mf_lc2_1006g_e = rbind(mf_lc2_1006g_e, show(m2))  
+}
+
+## calculate recovery rate
+lcReco_1006g_lc2_e = get_structure_reco_rate(mf_lc2_1006g_e, size_of_lc)
+
+```
+
+## Model Recovery 30 Items 6 DIF Gradient Pattern: 3006g - equal size
+```{r}
+set.seed(12345)
+
+# Set number of replications
+#n_rep = 1
+# Set number of items
+n_item = 30
+# Set sample size
+size_of_lc = c(1500, 1500)
+# Set DIF type
+dif_array = d_b_3006g
+# Set number of latent classes
+n_lc = length(size_of_lc)
+# Create list to store model fit data
+mf_lc2_3006g_e = list()
+
+
+for(i in 1:n_rep){
+  test = gen_response(n_item, size_of_lc, dif_array)
+  m2 = raschmix(as.matrix(test[, 1:n_item]), k = 1:4, scores = "saturated", nrep = 1)
+  mf_lc2_3006g_e = rbind(mf_lc2_3006g_e, show(m2))  
+}
+
+## calculate recovery rate
+lcReco_3006g_lc2_e = get_structure_reco_rate(mf_lc2_3006g_e, size_of_lc)
+
+```
+
+## Model Recovery 30 Items 12 DIF Gradient Pattern: 3012g - equal size
+```{r}
+set.seed(12345)
+
+# Set number of replications
+#n_rep = 1
+# Set number of items
+n_item = 30
+# Set sample size
+size_of_lc = c(1500, 1500)
+# Set DIF type
+dif_array = d_b_3012g
+# Set number of latent classes
+n_lc = length(size_of_lc)
+# Create list to store model fit data
+mf_lc2_3012g_e = list()
+
+
+for(i in 1:n_rep){
+  test = gen_response(n_item, size_of_lc, dif_array)
+  m2 = raschmix(as.matrix(test[, 1:n_item]), k = 1:4, scores = "saturated", nrep = 1)
+  mf_lc2_3012g_e = rbind(mf_lc2_3012g_e, show(m2))  
+}
+
+## calculate recovery rate
+lcReco_3012g_lc2_e = get_structure_reco_rate(mf_lc2_3012g_e, size_of_lc)
+
+```
+
+## Model Recovery 30 Items 18 DIF Gradient Pattern: 3018g - equal size
+```{r}
+set.seed(12345)
+
+# Set number of replications
+#n_rep = 30
+# Set number of items
+n_item = 30
+# Set sample size
+size_of_lc = c(1500, 1500)
+# Set DIF type
+dif_array = d_b_3018g
+# Set number of latent classes
+n_lc = length(size_of_lc)
+# Create list to store model fit data
+mf_lc2_3018g_e = list()
+
+
+for(i in 1:n_rep){
+  test = gen_response(n_item, size_of_lc, dif_array)
+  m2 = raschmix(as.matrix(test[, 1:n_item]), k = 1:4, scores = "saturated", nrep = 1)
+  mf_lc2_3018g_e = rbind(mf_lc2_3018g_e, show(m2))  
+}
+
+## calculate recovery rate
+lcReco_3018g_lc2_e = get_structure_reco_rate(mf_lc2_3018g_e, size_of_lc)
+
+```
+
+################ Model Recovery - Gradient Pattern - Two Latent Classes - Unequal Size ############################################
+
+
+## Model Recovery 10 Items 2 DIF Gradient Pattern: 1002g - unequal size
+```{r}
+set.seed(12345)
+
+# Set number of replications
+#n_rep = 1
+# Set number of items
+n_item = 10
+# Set sample size
+size_of_lc = c(2000, 1000)
+# Set DIF type
+dif_array = d_b_1002g
+# Set number of latent classes
+n_lc = length(size_of_lc)
+# Create list to store model fit data
+mf_lc2_1002g_u = list()
+
+
+for(i in 1:n_rep){
+  test = gen_response(n_item, size_of_lc, dif_array)
+  m2 = raschmix(as.matrix(test[, 1:n_item]), k = 1:4, scores = "saturated", nrep = 1)
+  mf_lc2_1002g_u = rbind(mf_lc2_1002g_u, show(m2))  
+}
+
+## calculate recovery rate
+lcReco_1002g_lc2_u = get_structure_reco_rate(mf_lc2_1002g_u, size_of_lc)
+
+```
+
+## Model Recovery 10 Items 4 DIF Gradient Pattern: 1004g - unequal size
+```{r}
+set.seed(12345)
+
+# Set number of replications
+#n_rep = 1
+# Set number of items
+n_item = 10
+# Set sample size
+size_of_lc = c(2000, 1000)
+# Set DIF type
+dif_array = d_b_1004g
+# Set number of latent classes
+n_lc = length(size_of_lc)
+# Create list to store model fit data
+mf_lc2_1004g_u = list()
+
+
+for(i in 1:n_rep){
+  test = gen_response(n_item, size_of_lc, dif_array)
+  m2 = raschmix(as.matrix(test[, 1:n_item]), k = 1:4, scores = "saturated", nrep = 1)
+  mf_lc2_1004g_u = rbind(mf_lc2_1004g_u, show(m2))  
+}
+
+## calculate recovery rate
+lcReco_1004g_lc2_u = get_structure_reco_rate(mf_lc2_1004g_u, size_of_lc)
+
+```
+
+## Model Recovery 10 Items 6 DIF Gradient Pattern: 1006g - unequal size
+```{r}
+set.seed(12345)
+
+# Set number of replications
+#n_rep = 1
+# Set number of items
+n_item = 10
+# Set sample size
+size_of_lc = c(2000, 1000)
+# Set DIF type
+dif_array = d_b_1006g
+# Set number of latent classes
+n_lc = length(size_of_lc)
+# Create list to store model fit data
+mf_lc2_1006g_u = list()
+
+
+for(i in 1:n_rep){
+  test = gen_response(n_item, size_of_lc, dif_array)
+  m2 = raschmix(as.matrix(test[, 1:n_item]), k = 1:4, scores = "saturated", nrep = 1)
+  mf_lc2_1006g_u = rbind(mf_lc2_1006g_u, show(m2))  
+}
+
+## calculate recovery rate
+lcReco_1006g_lc2_u = get_structure_reco_rate(mf_lc2_1006g_u, size_of_lc)
+
+```
+
+## Model Recovery 30 Items 6 DIF Gradient Pattern: 3006g - unequal size
+```{r}
+set.seed(12345)
+
+# Set number of replications
+#n_rep = 1
+# Set number of items
+n_item = 30
+# Set sample size
+size_of_lc = c(2000, 1000)
+# Set DIF type
+dif_array = d_b_3006g
+# Set number of latent classes
+n_lc = length(size_of_lc)
+# Create list to store model fit data
+mf_lc2_3006g_u = list()
+
+
+for(i in 1:n_rep){
+  test = gen_response(n_item, size_of_lc, dif_array)
+  m2 = raschmix(as.matrix(test[, 1:n_item]), k = 1:4, scores = "saturated", nrep = 1)
+  mf_lc2_3006g_u = rbind(mf_lc2_3006g_u, show(m2))  
+}
+
+## calculate recovery rate
+lcReco_3006g_lc2_u = get_structure_reco_rate(mf_lc2_3006g_u, size_of_lc)
+
+```
+
+## Model Recovery 30 Items 12 DIF Gradient Pattern: 3012g - unequal size
+```{r}
+set.seed(12345)
+
+# Set number of replications
+#n_rep = 10
+# Set number of items
+n_item = 30
+# Set sample size
+size_of_lc = c(2000, 1000)
+# Set DIF type
+dif_array = d_b_3012g
+# Set number of latent classes
+n_lc = length(size_of_lc)
+# Create list to store model fit data
+mf_lc2_3012g_u = list()
+
+
+for(i in 1:n_rep){
+  test = gen_response(n_item, size_of_lc, dif_array)
+  m2 = raschmix(as.matrix(test[, 1:n_item]), k = 1:4, scores = "saturated", nrep = 1)
+  mf_lc2_3012g_u = rbind(mf_lc2_3012g_u, show(m2))  
+}
+
+## calculate recovery rate
+lcReco_3012g_lc2_u = get_structure_reco_rate(mf_lc2_3012g_u, size_of_lc)
+
+```
+
+## Model Recovery 30 Items 18 DIF Gradient Pattern: 3018g - unequal size
+```{r}
+set.seed(12345)
+
+# Set number of replications
+#n_rep = 10
+# Set number of items
+n_item = 30
+# Set sample size
+size_of_lc = c(2000, 1000)
+# Set DIF type
+dif_array = d_b_3018g
+# Set number of latent classes
+n_lc = length(size_of_lc)
+# Create list to store model fit data
+mf_lc2_3018g_u = list()
+
+
+for(i in 1:n_rep){
+  test = gen_response(n_item, size_of_lc, dif_array)
+  m2 = raschmix(as.matrix(test[, 1:n_item]), k = 1:4, scores = "saturated", nrep = 1)
+  mf_lc2_3018g_u = rbind(mf_lc2_3018g_u, show(m2))  
+}
+
+## calculate recovery rate
+lcReco_3018g_lc2_u = get_structure_reco_rate(mf_lc2_3018g_u, size_of_lc)
+
+```
+
+
+############################################## THREE LATENT CLASSES STRUCTURE ######################################################
+
+################### Model Recovery - Symmetric Pattern - Three Latent Classes - Equal Size #######################################
+
+## Model Recovery 10 Items 2 DIF Sysmmetric Pattern: 1002s - equal size
+```{r}
+set.seed(12345)
+
+# Set number of replications
+#n_rep = 10
+# Set number of items
+n_item = 10
+# Set sample size
+size_of_lc = c(1000, 1000, 1000)
+# Set DIF type
+dif_array = d_b_1002s
+# Set number of latent classes
+n_lc = length(size_of_lc)
+# Create list to store model fit data
+mf_lc3_1002s_e = list()
+
+
+for(i in 1:n_rep){
+  test = gen_response(n_item, size_of_lc, dif_array)
+  m2 = raschmix(as.matrix(test[, 1:n_item]), k = 1:4, scores = "saturated", nrep = 1)
+  mf_lc3_1002s_e = rbind(mf_lc3_1002s_e, show(m2))  
+}
+
+## calculate recovery rate
+lcReco_1002s_lc3_e = get_structure_reco_rate(mf_lc3_1002s_e, size_of_lc)
+
+```
+
+## Model Recovery 10 Items 4 DIF Sysmmetric Pattern: 1004s - equal size
+```{r}
+set.seed(12345)
+
+# Set number of replications
+#n_rep = 10
+# Set number of items
+n_item = 10
+# Set sample size
+size_of_lc = c(1000, 1000, 1000)
+# Set DIF type
+dif_array = d_b_1004s
+# Set number of latent classes
+n_lc = length(size_of_lc)
+# Create list to store model fit data
+mf_lc3_1004s_e = list()
+
+
+for(i in 1:n_rep){
+  test = gen_response(n_item, size_of_lc, dif_array)
+  m2 = raschmix(as.matrix(test[, 1:n_item]), k = 1:4, scores = "saturated", nrep = 1)
+  mf_lc3_1004s_e = rbind(mf_lc3_1004s_e, show(m2))  
+}
+
+## calculate recovery rate
+lcReco_1004s_lc3_e = get_structure_reco_rate(mf_lc3_1004s_e, size_of_lc)
+
+```
+
+## Model Recovery 10 Items 6 DIF Sysmmetric Pattern: 1006s - equal size
+```{r}
+set.seed(12345)
+
+# Set number of replications
+#n_rep = 10
+# Set number of items
+n_item = 10
+# Set sample size
+size_of_lc = c(1000, 1000, 1000)
+# Set DIF type
+dif_array = d_b_1006s
+# Set number of latent classes
+n_lc = length(size_of_lc)
+# Create list to store model fit data
+mf_lc3_1006s_e = list()
+
+
+for(i in 1:n_rep){
+  test = gen_response(n_item, size_of_lc, dif_array)
+  m2 = raschmix(as.matrix(test[, 1:n_item]), k = 1:4, scores = "saturated", nrep = 1)
+  mf_lc3_1006s_e = rbind(mf_lc3_1006s_e, show(m2))  
+}
+
+## calculate recovery rate
+lcReco_1006s_lc3_e = get_structure_reco_rate(mf_lc3_1006s_e, size_of_lc)
+
+```
+
+## Model Recovery 30 Items 6 DIF Sysmmetric Pattern: 3006s - equal size
+```{r}
+set.seed(12345)
+
+# Set number of replications
+#n_rep = 10
+# Set number of items
+n_item = 30
+# Set sample size
+size_of_lc = c(1000, 1000, 1000)
+# Set DIF type
+dif_array = d_b_3006s
+# Set number of latent classes
+n_lc = length(size_of_lc)
+# Create list to store model fit data
+mf_lc3_3006s_e = list()
+
+
+for(i in 1:n_rep){
+  test = gen_response(n_item, size_of_lc, dif_array)
+  m2 = raschmix(as.matrix(test[, 1:n_item]), k = 1:4, scores = "saturated", nrep = 1)
+  mf_lc3_3006s_e = rbind(mf_lc3_3006s_e, show(m2))  
+}
+
+## calculate recovery rate
+lcReco_3006s_lc3_e = get_structure_reco_rate(mf_lc3_3006s_e, size_of_lc)
+
+```
+
+## Model Recovery 30 Items 12 DIF Sysmmetric Pattern: 3012s - equal size
+```{r}
+set.seed(12345)
+
+# Set number of replications
+#n_rep = 10
+# Set number of items
+n_item = 30
+# Set sample size
+size_of_lc = c(1000, 1000, 1000)
+# Set DIF type
+dif_array = d_b_3012s
+# Set number of latent classes
+n_lc = length(size_of_lc)
+# Create list to store model fit data
+mf_lc3_3012s_e = list()
+
+
+for(i in 1:n_rep){
+  test = gen_response(n_item, size_of_lc, dif_array)
+  m2 = raschmix(as.matrix(test[, 1:n_item]), k = 1:4, scores = "saturated", nrep = 1)
+  mf_lc3_3012s_e = rbind(mf_lc3_3012s_e, show(m2))  
+}
+
+## calculate recovery rate
+lcReco_3012s_lc3_e = get_structure_reco_rate(mf_lc3_3012s_e, size_of_lc)
+
+```
+
+## Model Recovery 30 Items 18 DIF Sysmmetric Pattern: 3018s - equal size
+```{r}
+set.seed(12345)
+
+# Set number of replications
+#n_rep = 6
+# Set number of items
+n_item = 30
+# Set sample size
+size_of_lc = c(1000, 1000, 1000)
+# Set DIF type
+dif_array = d_b_3018s
+# Set number of latent classes
+n_lc = length(size_of_lc)
+# Create list to store model fit data
+mf_lc3_3018s_e = list()
+
+
+for(i in 1:n_rep){
+  test = gen_response(n_item, size_of_lc, dif_array)
+  m2 = raschmix(as.matrix(test[, 1:n_item]), k = 1:4, scores = "saturated", nrep = 1)
+  mf_lc3_3018s_e = rbind(mf_lc3_3018s_e, show(m2))  
+}
+
+## calculate recovery rate
+lcReco_3018s_lc3_e = get_structure_reco_rate(mf_lc3_3018s_e, size_of_lc)
+
+```
+
+################ Model Recovery - Symmetric Pattern - Three Latent Classes - Unequal Size #########################################
+
+
+## Model Recovery 10 Items 2 DIF Sysmmetric Pattern: 1002s - unequal size
+```{r}
+set.seed(12345)
+
+# Set number of replications
+#n_rep = 1
+# Set number of items
+n_item = 10
+# Set sample size
+size_of_lc = c(1500, 1000, 500)
+# Set DIF type
+dif_array = d_b_1002s
+# Set number of latent classes
+n_lc = length(size_of_lc)
+# Create list to store model fit data
+mf_lc3_1002s_u = list()
+
+
+for(i in 1:n_rep){
+  test = gen_response(n_item, size_of_lc, dif_array)
+  m2 = raschmix(as.matrix(test[, 1:n_item]), k = 1:4, scores = "saturated", nrep = 1)
+  mf_lc3_1002s_u = rbind(mf_lc3_1002s_u, show(m2))  
+}
+
+## calculate recovery rate
+lcReco_1002s_lc3_u = get_structure_reco_rate(mf_lc3_1002s_u, size_of_lc)
+
+```
+
+## Model Recovery 10 Items 4 DIF Sysmmetric Pattern: 1004s - unequal size
+```{r}
+set.seed(12345)
+
+# Set number of replications
+#n_rep = 1
+# Set number of items
+n_item = 10
+# Set sample size
+size_of_lc = c(1500, 1000, 500)
+# Set DIF type
+dif_array = d_b_1004s
+# Set number of latent classes
+n_lc = length(size_of_lc)
+# Create list to store model fit data
+mf_lc3_1004s_u = list()
+
+
+for(i in 1:n_rep){
+  test = gen_response(n_item, size_of_lc, dif_array)
+  m2 = raschmix(as.matrix(test[, 1:n_item]), k = 1:4, scores = "saturated", nrep = 1)
+  mf_lc3_1004s_u = rbind(mf_lc3_1004s_u, show(m2))  
+}
+
+## calculate recovery rate
+lcReco_1004s_lc3_u = get_structure_reco_rate(mf_lc3_1004s_u, size_of_lc)
+
+```
+
+## Model Recovery 10 Items 6 DIF Sysmmetric Pattern: 1006s - unequal size
+```{r}
+set.seed(12345)
+
+# Set number of replications
+#n_rep = 1
+# Set number of items
+n_item = 10
+# Set sample size
+size_of_lc = c(1500, 1000, 500)
+# Set DIF type
+dif_array = d_b_1006s
+# Set number of latent classes
+n_lc = length(size_of_lc)
+# Create list to store model fit data
+mf_lc3_1006s_u = list()
+
+
+for(i in 1:n_rep){
+  test = gen_response(n_item, size_of_lc, dif_array)
+  m2 = raschmix(as.matrix(test[, 1:n_item]), k = 1:4, scores = "saturated", nrep = 1)
+  mf_lc3_1006s_u = rbind(mf_lc3_1006s_u, show(m2))  
+}
+
+## calculate recovery rate
+lcReco_1006s_lc3_u = get_structure_reco_rate(mf_lc3_1006s_u, size_of_lc)
+
+```
+
+## Model Recovery 30 Items 6 DIF Sysmmetric Pattern: 3006s - unequal size
+```{r}
+set.seed(12345)
+
+# Set number of replications
+#n_rep = 1
+# Set number of items
+n_item = 30
+# Set sample size
+size_of_lc = c(1500, 1000, 500)
+# Set DIF type
+dif_array = d_b_3006s
+# Set number of latent classes
+n_lc = length(size_of_lc)
+# Create list to store model fit data
+mf_lc3_3006s_u = list()
+
+
+for(i in 1:n_rep){
+  test = gen_response(n_item, size_of_lc, dif_array)
+  m2 = raschmix(as.matrix(test[, 1:n_item]), k = 1:4, scores = "saturated", nrep = 1)
+  mf_lc3_3006s_u = rbind(mf_lc3_3006s_u, show(m2))  
+}
+
+## calculate recovery rate
+lcReco_3006s_lc3_u = get_structure_reco_rate(mf_lc3_3006s_u, size_of_lc)
+
+```
+
+## Model Recovery 30 Items 12 DIF Sysmmetric Pattern: 3012s - unequal size
+```{r}
+set.seed(12345)
+
+# Set number of replications
+#n_rep = 3
+# Set number of items
+n_item = 30
+# Set sample size
+size_of_lc = c(1500, 1000, 500)
+# Set DIF type
+dif_array = d_b_3012s
+# Set number of latent classes
+n_lc = length(size_of_lc)
+# Create list to store model fit data
+mf_lc3_3012s_u = list()
+
+
+for(i in 1:n_rep){
+  test = gen_response(n_item, size_of_lc, dif_array)
+  m2 = raschmix(as.matrix(test[, 1:n_item]), k = 1:4, scores = "saturated", nrep = 1)
+  mf_lc3_3012s_u = rbind(mf_lc3_3012s_u, show(m2))  
+}
+
+## calculate recovery rate
+lcReco_3012s_lc3_u = get_structure_reco_rate(mf_lc3_3012s_u, size_of_lc)
+
+```
+
+## Model Recovery 30 Items 18 DIF Sysmmetric Pattern: 3018s - unequal size
+```{r}
+set.seed(12345)
+
+# Set number of replications
+#n_rep = 3
+# Set number of items
+n_item = 30
+# Set sample size
+size_of_lc = c(1500, 1000, 500)
+# Set DIF type
+dif_array = d_b_3018s
+# Set number of latent classes
+n_lc = length(size_of_lc)
+# Create list to store model fit data
+mf_lc3_3018s_u = list()
+
+
+for(i in 1:n_rep){
+  test = gen_response(n_item, size_of_lc, dif_array)
+  m2 = raschmix(as.matrix(test[, 1:n_item]), k = 1:4, scores = "saturated", nrep = 1)
+  mf_lc3_3018s_u = rbind(mf_lc3_3018s_u, show(m2))  
+}
+
+## calculate recovery rate
+lcReco_3018s_lc3_u = get_structure_reco_rate(mf_lc3_3018s_u, size_of_lc)
+
+```
+
+
+################### Model Recovery - Gradient Pattern - Three Latent Classes - Equal Size #########################################
+
+
+## Model Recovery 10 Items 2 DIF Gradient Pattern: 1002g - equal size
+```{r}
+set.seed(12345)
+
+# Set number of replications
+#n_rep = 1
+# Set number of items
+n_item = 10
+# Set sample size
+size_of_lc = c(1000, 1000, 1000)
+# Set DIF type
+dif_array = d_b_1002g
+# Set number of latent classes
+n_lc = length(size_of_lc)
+# Create list to store model fit data
+mf_lc3_1002g_e = list()
+
+
+for(i in 1:n_rep){
+  test = gen_response(n_item, size_of_lc, dif_array)
+  m2 = raschmix(as.matrix(test[, 1:n_item]), k = 1:4, scores = "saturated", nrep = 1)
+  mf_lc3_1002g_e = rbind(mf_lc3_1002g_e, show(m2))  
+}
+
+## calculate recovery rate
+lcReco_1002g_lc3_e = get_structure_reco_rate(mf_lc3_1002g_e, size_of_lc)
+
+```
+
+## Model Recovery 10 Items 4 DIF Gradient Pattern: 1004g - equal size
+```{r}
+set.seed(12345)
+
+# Set number of replications
+#n_rep = 1
+# Set number of items
+n_item = 10
+# Set sample size
+size_of_lc = c(1000, 1000, 1000)
+# Set DIF type
+dif_array = d_b_1004g
+# Set number of latent classes
+n_lc = length(size_of_lc)
+# Create list to store model fit data
+mf_lc3_1004g_e = list()
+
+
+for(i in 1:n_rep){
+  test = gen_response(n_item, size_of_lc, dif_array)
+  m2 = raschmix(as.matrix(test[, 1:n_item]), k = 1:4, scores = "saturated", nrep = 1)
+  mf_lc3_1004g_e = rbind(mf_lc3_1004g_e, show(m2))  
+}
+
+## calculate recovery rate
+lcReco_1004g_lc3_e = get_structure_reco_rate(mf_lc3_1004g_e, size_of_lc)
+
+```
+
+## Model Recovery 10 Items 6 DIF Gradient Pattern: 1006g - equal size
+```{r}
+set.seed(12345)
+
+# Set number of replications
+#n_rep = 1
+# Set number of items
+n_item = 10
+# Set sample size
+size_of_lc = c(1000, 1000, 1000)
+# Set DIF type
+dif_array = d_b_1006g
+# Set number of latent classes
+n_lc = length(size_of_lc)
+# Create list to store model fit data
+mf_lc3_1006g_e = list()
+
+
+for(i in 1:n_rep){
+  test = gen_response(n_item, size_of_lc, dif_array)
+  m2 = raschmix(as.matrix(test[, 1:n_item]), k = 1:4, scores = "saturated", nrep = 1)
+  mf_lc3_1006g_e = rbind(mf_lc3_1006g_e, show(m2))  
+}
+
+## calculate recovery rate
+lcReco_1006g_lc3_e = get_structure_reco_rate(mf_lc3_1006g_e, size_of_lc)
+
+```
+
+## Model Recovery 30 Items 6 DIF Gradient Pattern: 3006g - equal size
+```{r}
+set.seed(12345)
+
+# Set number of replications
+#n_rep = 1
+# Set number of items
+n_item = 30
+# Set sample size
+size_of_lc = c(1000, 1000, 1000)
+# Set DIF type
+dif_array = d_b_3006g
+# Set number of latent classes
+n_lc = length(size_of_lc)
+# Create list to store model fit data
+mf_lc3_3006g_e = list()
+
+
+for(i in 1:n_rep){
+  test = gen_response(n_item, size_of_lc, dif_array)
+  m2 = raschmix(as.matrix(test[, 1:n_item]), k = 1:4, scores = "saturated", nrep = 1)
+  mf_lc3_3006g_e = rbind(mf_lc3_3006g_e, show(m2))  
+}
+
+## calculate recovery rate
+lcReco_3006g_lc3_e = get_structure_reco_rate(mf_lc3_3006g_e, size_of_lc)
+
+```
+
+## Model Recovery 30 Items 12 DIF Gradient Pattern: 3012g - equal size
+```{r}
+set.seed(12345)
+
+# Set number of replications
+#n_rep = 1
+# Set number of items
+n_item = 30
+# Set sample size
+size_of_lc = c(1000, 1000, 1000)
+# Set DIF type
+dif_array = d_b_3012g
+# Set number of latent classes
+n_lc = length(size_of_lc)
+# Create list to store model fit data
+mf_lc3_3012g_e = list()
+
+
+for(i in 1:n_rep){
+  test = gen_response(n_item, size_of_lc, dif_array)
+  m2 = raschmix(as.matrix(test[, 1:n_item]), k = 1:4, scores = "saturated", nrep = 1)
+  mf_lc3_3012g_e = rbind(mf_lc3_3012g_e, show(m2))  
+}
+
+## calculate recovery rate
+lcReco_3012g_lc3_e = get_structure_reco_rate(mf_lc3_3012g_e, size_of_lc)
+
+```
+
+## Model Recovery 30 Items 18 DIF Gradient Pattern: 3018g - equal size
+```{r}
+set.seed(12345)
+
+# Set number of replications
+#n_rep = 30
+# Set number of items
+n_item = 30
+# Set sample size
+size_of_lc = c(1000, 1000, 1000)
+# Set DIF type
+dif_array = d_b_3018g
+# Set number of latent classes
+n_lc = length(size_of_lc)
+# Create list to store model fit data
+mf_lc3_3018g_e = list()
+
+
+for(i in 1:n_rep){
+  test = gen_response(n_item, size_of_lc, dif_array)
+  m2 = raschmix(as.matrix(test[, 1:n_item]), k = 1:4, scores = "saturated", nrep = 1)
+  mf_lc3_3018g_e = rbind(mf_lc3_3018g_e, show(m2))  
+}
+
+## calculate recovery rate
+lcReco_3018g_lc3_e = get_structure_reco_rate(mf_lc3_3018g_e, size_of_lc)
+
+```
+
+################ Model Recovery - Gradient Pattern - Three Latent Classes - Unequal Size ##########################################
+
+
+## Model Recovery 10 Items 2 DIF Gradient Pattern: 1002g - unequal size
+```{r}
+set.seed(12345)
+
+# Set number of replications
+#n_rep = 1
+# Set number of items
+n_item = 10
+# Set sample size
+size_of_lc = c(1500, 1000, 500)
+# Set DIF type
+dif_array = d_b_1002g
+# Set number of latent classes
+n_lc = length(size_of_lc)
+# Create list to store model fit data
+mf_lc3_1002g_u = list()
+
+
+for(i in 1:n_rep){
+  test = gen_response(n_item, size_of_lc, dif_array)
+  m2 = raschmix(as.matrix(test[, 1:n_item]), k = 1:4, scores = "saturated", nrep = 1)
+  mf_lc3_1002g_u = rbind(mf_lc3_1002g_u, show(m2))  
+}
+
+## calculate recovery rate
+lcReco_1002g_lc3_u = get_structure_reco_rate(mf_lc3_1002g_u, size_of_lc)
+
+```
+
+## Model Recovery 10 Items 4 DIF Gradient Pattern: 1004g - unequal size
+```{r}
+set.seed(12345)
+
+# Set number of replications
+#n_rep = 1
+# Set number of items
+n_item = 10
+# Set sample size
+size_of_lc = c(1500, 1000, 500)
+# Set DIF type
+dif_array = d_b_1004g
+# Set number of latent classes
+n_lc = length(size_of_lc)
+# Create list to store model fit data
+mf_lc3_1004g_u = list()
+
+
+for(i in 1:n_rep){
+  test = gen_response(n_item, size_of_lc, dif_array)
+  m2 = raschmix(as.matrix(test[, 1:n_item]), k = 1:4, scores = "saturated", nrep = 1)
+  mf_lc3_1004g_u = rbind(mf_lc3_1004g_u, show(m2))  
+}
+
+## calculate recovery rate
+lcReco_1004g_lc3_u = get_structure_reco_rate(mf_lc3_1004g_u, size_of_lc)
+
+```
+
+## Model Recovery 10 Items 6 DIF Gradient Pattern: 1006g - unequal size
+```{r}
+set.seed(12345)
+
+# Set number of replications
+#n_rep = 1
+# Set number of items
+n_item = 10
+# Set sample size
+size_of_lc = c(1500, 1000, 500)
+# Set DIF type
+dif_array = d_b_1006g
+# Set number of latent classes
+n_lc = length(size_of_lc)
+# Create list to store model fit data
+mf_lc3_1006g_u = list()
+
+
+for(i in 1:n_rep){
+  test = gen_response(n_item, size_of_lc, dif_array)
+  m2 = raschmix(as.matrix(test[, 1:n_item]), k = 1:4, scores = "saturated", nrep = 1)
+  mf_lc3_1006g_u = rbind(mf_lc3_1006g_u, show(m2))  
+}
+
+## calculate recovery rate
+lcReco_1006g_lc3_u = get_structure_reco_rate(mf_lc3_1006g_u, size_of_lc)
+
+```
+
+## Model Recovery 30 Items 6 DIF Gradient Pattern: 3006g - unequal size
+```{r}
+set.seed(12345)
+
+# Set number of replications
+#n_rep = 1
+# Set number of items
+n_item = 30
+# Set sample size
+size_of_lc = c(1500, 1000, 500)
+# Set DIF type
+dif_array = d_b_3006g
+# Set number of latent classes
+n_lc = length(size_of_lc)
+# Create list to store model fit data
+mf_lc3_3006g_u = list()
+
+
+for(i in 1:n_rep){
+  test = gen_response(n_item, size_of_lc, dif_array)
+  m2 = raschmix(as.matrix(test[, 1:n_item]), k = 1:4, scores = "saturated", nrep = 1)
+  mf_lc3_3006g_u = rbind(mf_lc3_3006g_u, show(m2))  
+}
+
+## calculate recovery rate
+lcReco_3006g_lc3_u = get_structure_reco_rate(mf_lc3_3006g_u, size_of_lc)
+
+```
+
+## Model Recovery 30 Items 12 DIF Gradient Pattern: 3012g - unequal size
+```{r}
+set.seed(12345)
+
+# Set number of replications
+#n_rep = 10
+# Set number of items
+n_item = 30
+# Set sample size
+size_of_lc = c(1500, 1000, 500)
+# Set DIF type
+dif_array = d_b_3012g
+# Set number of latent classes
+n_lc = length(size_of_lc)
+# Create list to store model fit data
+mf_lc3_3012g_u = list()
+
+
+for(i in 1:n_rep){
+  test = gen_response(n_item, size_of_lc, dif_array)
+  m2 = raschmix(as.matrix(test[, 1:n_item]), k = 1:4, scores = "saturated", nrep = 1)
+  mf_lc3_3012g_u = rbind(mf_lc3_3012g_u, show(m2))  
+}
+
+## calculate recovery rate
+lcReco_3012g_lc3_u = get_structure_reco_rate(mf_lc3_3012g_u, size_of_lc)
+
+```
+
+## Model Recovery 30 Items 18 DIF Gradient Pattern: 3018g - unequal size
+```{r}
+set.seed(12345)
+
+# Set number of replications
+#n_rep = 1
+# Set number of items
+n_item = 30
+# Set sample size
+size_of_lc = c(1500, 1000, 500)
+# Set DIF type
+dif_array = d_b_3018g
+# Set number of latent classes
+n_lc = length(size_of_lc)
+# Create list to store model fit data
+mf_lc3_3018g_u = list()
+
+
+for(i in 1:n_rep){
+  test = gen_response(n_item, size_of_lc, dif_array)
+  m2 = raschmix(as.matrix(test[, 1:n_item]), k = 1:4, scores = "saturated", nrep = 1)
+  mf_lc3_3018g_u = rbind(mf_lc3_3018g_u, show(m2))  
+}
+
+## calculate recovery rate
+lcReco_3018g_lc3_u = get_structure_reco_rate(mf_lc3_3018g_u, size_of_lc)
+
+```
+
+
+# Merge Tables and Save to .csv
+```{r}
+lcReco_lc2_table <- rbind(cbind(lcReco_1002s_lc2_e, lcReco_1002s_lc2_u),
+                          cbind(lcReco_1002g_lc2_e, lcReco_1002g_lc2_u),
+                          cbind(lcReco_1004s_lc2_e, lcReco_1004s_lc2_u),
+                          cbind(lcReco_1004g_lc2_e, lcReco_1004g_lc2_u),
+                          cbind(lcReco_1006s_lc2_e, lcReco_1006s_lc2_u),
+                          cbind(lcReco_1006g_lc2_e, lcReco_1006g_lc2_u),
+                          cbind(lcReco_3006s_lc2_e, lcReco_3006s_lc2_u),
+                          cbind(lcReco_3006g_lc2_e, lcReco_3006g_lc2_u),
+                          cbind(lcReco_3012s_lc2_e, lcReco_3012s_lc2_u),
+                          cbind(lcReco_3012g_lc2_e, lcReco_3012g_lc2_u),
+                          cbind(lcReco_3018s_lc2_e, lcReco_3018s_lc2_u),
+                          cbind(lcReco_3018g_lc2_e, lcReco_3018g_lc2_u))
+
+
+lcReco_lc3_table <- rbind(cbind(lcReco_1002s_lc3_e, lcReco_1002s_lc3_u),
+                          cbind(lcReco_1002g_lc3_e, lcReco_1002g_lc3_u),
+                          cbind(lcReco_1004s_lc3_e, lcReco_1004s_lc3_u),
+                          cbind(lcReco_1004g_lc3_e, lcReco_1004g_lc3_u),
+                          cbind(lcReco_1006s_lc3_e, lcReco_1006s_lc3_u),
+                          cbind(lcReco_1006g_lc3_e, lcReco_1006g_lc3_u),
+                          cbind(lcReco_3006s_lc3_e, lcReco_3006s_lc3_u),
+                          cbind(lcReco_3006g_lc3_e, lcReco_3006g_lc3_u),
+                          cbind(lcReco_3012s_lc3_e, lcReco_3012s_lc3_u),
+                          cbind(lcReco_3012g_lc3_e, lcReco_3012g_lc3_u),
+                          cbind(lcReco_3018s_lc3_e, lcReco_3018s_lc3_u),
+                          cbind(lcReco_3018g_lc3_e, lcReco_3018g_lc3_u))
+
+```
+

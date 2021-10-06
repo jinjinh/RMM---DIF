@@ -1,0 +1,63 @@
+---
+title: "fomulas"
+output:
+  word_document: default
+  pdf_document: default
+  html_document: default
+---
+IRT models can be viewd as special case of logistic regression, for dichotomous item IRT model can be written as: 
+$P(X_{ij} = x_{ij}|\theta_i, a_j,b_j,c_j)=c_j+(1-c_j)\frac{e^{a_j(\theta_i-b_j)}}{1+e^{a_j(\theta_i-b_j)}}$
+
+Where $x_{ij}$ is response of subject $i$ to item $j$, $\theta_i$ is the ability or tendency of subject $i$; $a_j$, $b_j$ and $c_j$ are parameters for discrimination, difficulty and psudo-guessing of item $j$ respectively. 2PL IRT model can be obtaind from the equation by fixing $c_j$ to 0; and by additionally fixing $b_j$ to 1 comes the 1PL model which also refer to Rasch model(Wright, 1977).  
+
+
+The LRT statistics define as follow: 
+\(G^2 = -2\ln\frac{L(model_{compact})}{L(model_{augumented})}\sim\chi^2\)
+$G^2$
+
+$Q_j=(v_{jR}-V_{jF})'(\sum_{jR}-\sum_{jF})^{-1}(v_{jR}-v_{fR})$
+Where $v_{jR}=(a_{jR},b_{jR},c_{jR})$ and $v_{jF}=(a_{jF},b_{jF},c_{jF})$ are respectively vectors of $jth$ item's discrimination, difficulty and pseudoguessing of reference group and focal group. $\sum_{jR}$ and $\sum_{jF}$ are the variance-covariance matrices for corresponding parameters. The $Q_j$ has an asymptotic chi-square distribution with degree of freedom equal to the number of tested parameters in the model. For Rasch model, equation 3 can be written as: $Q_i=\frac{(b_{jR}-b_{jF})^2}{\hat\sigma^2_{jR}+\hat\sigma^2_{jF}}$
+Where $\hat\sigma_{jR}$ and $\hat\sigma_{jF}$ are repectively standard errors for reference group and focal group's $jth$ item difficulty parameters. 
+$Z = \frac{b_{jR}-b_{jF}}{\sqrt{\hat\sigma^2_{jR}+\hat\sigma^2_{jF}} }$
+
+Factoring Rasch Model
+    Mixed Rasch Model was introduced by Rost(1990, 1995), which combines a ltent trait appraoch (Rasch Model; Rasch, 1960) and latent class approach (General 
+Mixture Model) to quantitively model underlying tendency and ability differences. The mixed Rasch model is called Rasch mixture model in recent studies (eg: Frick et al, 2014), which not only highlight its relation to general mixture model but also avoid cofusion with mixed effect models. 
+Like LR test, Rasch mixture model is global DIF test. Independence among items is assumed, the probability for observing a vector $y_i=(y_{i1},...,y_{im})^T$ of $ith$ subject's responses to all $m$ item: can be written as 
+$$P(Y_i=y_i|\theta_i, b) = \prod_{j=1}^m\frac{e^{y_{ij}(\theta_i-b_i)}}{1+e^{(\theta_i-b_i)}}$$
+Import the number of correct scored items or raw score $R_i=\sum_{j=1}^mY_{ij}$ as a sufficient statistic for the ability $\theta_i$ (Molenaar, 1995). The probability of equation can be splity into two parts
+$$P(Y_i=y_i|\theta_i, b)=h(y_i|r_i, b)g(r_i|\theta_i,b)$$
+## In which the first factor $h(\cdot)$ is independent of subject ability parameter $\theta$. As in Rasch mixture model, the full likelihood is of interest, the score distribution $g(\cdot)$ need to be specified. Rost and von Davier(1995) suggest to emloy some distributions for the raw score $r_i$ with a set of auxiliary parameter $\delta$, thus the probability density function can be written as
+$$f(y_i|b,\delta)=h(y_i|r_i,b)g(r_i|\delta)$$
+Conditional Maximum likelihood (CML) can be for estimating item difficulty parameter $b$ by maximuming only the conditional part of $h(\cdot)$ (Frick et al, 2014). Rost (1990) introduces a saturated specification for $g(\cdot)$ which requires $m-2$ separate parameters for each possible score excluding two extreme scores (r= 0 and r=m, which don't contribute to the likelihood). To avoid redundance of too many parameters, Rost and van Davier (1995) suggest a mean-variance specification for $g(\cdot)$ with only two parameter for mean and variance. Frick et al (2014) introduces a even more parsimonious specification for $g(\cdot)$ by setting it equal across subgroups, which make the full likelihood only depends on the conditional likilihood proportion $h(\cdot)$. 
+
+#Rasch Mixture Model
+    Generally, a mixture model is a mixture of $k$ components of $f_k(x)$ which can be distributions or models but must from the same family that collectively make a mixture distribution $f(x)$:
+  $$f(x)=\sum_{k=1}^k\pi_kf_k(x)$$
+Where $\sum_{k=1}^k\pi_k=1$ becouse the proportion different classes should be added up to 1.   
+  
+Given person $i$ belong to class $k$, likelihood function of Rasch mixture model with $K$ components is described as
+ $$L(\pi_1,...,\pi_k,b_1,...,b_k,\delta_1,...,\delta_k)=\prod_{i=1}^n\sum_{k=1}^{k}\pi_kP(Y_{ij=y_{ij}}|k, b, \delta)$$ 
+
+Expectation-Maximization (EM) algorithm is used to estimate parameters in mixture models
+Without the labels on the data indicating latent classes they belong to, it is ununlikely to apply maximimum likelihood estimate (MLE) directly. EM finds a way to iterately approximate weights $\pi_k$ for each latent classes and then re-estimate parameters for Rasch models untill converges. 
+
+1. Set some initial parameter estimates on Rasch model.
+2. Caculate posterior probabilities of each observation $i$ belonging to a component $k$ (E-step).
+3. The generated posterier distribution in step 2 is used to re-caculated Rasch model parameters using MLE(M-step).
+4. Repeat steps 2 and 3 until there is convergence.
+
+Below are some notations
+$\Delta_b$ $LC_r$ $LR_{f_1}$ $LC_{f_2}$
+$b_{LC_{f1}} = b_{LC_r} + 2\Delta_b$
+$unif(-1, 1)$
+$\sum b$
+$\theta_{LC_r}$ $\theta_{LC_{f1}}$ $\theta_{LC_{f2}}$
+$K = 1, 2, 3, 4$
+$$AIC = -2ln(\hat{L}) +2P $$ where $\hat{L}$ is the maximized value of the likelihood of the model and $p$ is the number of estimated parameters in the model.
+$$BIC = -2ln(\hat{L})+ Pln(N)$$ N is the number of observations.
+$$RMSE = \sqrt{\sum_{i =1}^{n}\frac{(\hat{\Delta_b}-\Delta_b)^2}{n}}$$ where $\hat{\Delta_b}$ is predicted magnitude of DIF, $\Delta_b$ is correspondind true DIF, and n is number of recovered replication for the cell.
+
+$$\eta^2 = SS_{effect}/SS_{total}$$ where $SS_{effect}$ is the sum squares for a factor and $ss_{total}$ is sum squares for all effects.
+$\eta^2$ see Equation 15, is used as a measure of effect size for each factor.
+$\eta^2\le0.06$ $0.06<\eta^2\le0.14$ $\eta^2>0.14$$\sigma$
