@@ -10,10 +10,11 @@ $P(X_{ij} = x_{ij}|\theta_i, a_j,b_j,c_j)=c_j+(1-c_j)\frac{e^{a_j(\theta_i-b_j)}
 
 Where $x_{ij}$ is response of subject $i$ to item $j$, $\theta_i$ is the ability or tendency of subject $i$; $a_j$, $b_j$ and $c_j$ are parameters for discrimination, difficulty and psudo-guessing of item $j$ respectively. 2PL IRT model can be obtaind from the equation by fixing $c_j$ to 0; and by additionally fixing $b_j$ to 1 comes the 1PL model which also refer to Rasch model(Wright, 1977).  
 
-
+```
 The LRT statistics define as follow: 
 \(G^2 = -2\ln\frac{L(model_{compact})}{L(model_{augumented})}\sim\chi^2\)
 $G^2$
+```
 
 $Q_j=(v_{jR}-V_{jF})'(\sum_{jR}-\sum_{jF})^{-1}(v_{jR}-v_{fR})$
 Where $v_{jR}=(a_{jR},b_{jR},c_{jR})$ and $v_{jF}=(a_{jF},b_{jF},c_{jF})$ are respectively vectors of $jth$ item's discrimination, difficulty and pseudoguessing of reference group and focal group. $\sum_{jR}$ and $\sum_{jF}$ are the variance-covariance matrices for corresponding parameters. The $Q_j$ has an asymptotic chi-square distribution with degree of freedom equal to the number of tested parameters in the model. For Rasch model, equation 3 can be written as: $Q_i=\frac{(b_{jR}-b_{jF})^2}{\hat\sigma^2_{jR}+\hat\sigma^2_{jF}}$
