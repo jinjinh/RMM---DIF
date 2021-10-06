@@ -1,0 +1,1554 @@
+---
+title: "DIF"
+author: "Jinjin Huang"
+date: "5/7/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+setwd("C:/Users/Jinjin Huang/Desktop/DIF")
+```
+
+
+```{r, warning = FALSE}
+library(mirt)
+library(psychomix)
+```
+
+
+### Generating Datasets
+## Generating Parameters
+```{r}
+
+# List delta_b for symmetric DIF patterns
+d_b_1002s <- c(-1.8, 1.8, 0, 0, 0, 0, 0, 0, 0 ,0)
+d_b_1004s <- c(-1.8, -0.9, 0.9, 1.8, 0, 0 ,0, 0, 0, 0)
+d_b_1006s <- c(-1.8, -1.2, -0.6, 0.6, 1.2 ,1.8, 0, 0 ,0 ,0)
+d_b_3006s <- c(-1.8, -1.2, -0.6, 0.6, 1.2 ,1.8, 0, 0 ,0 ,0, 0, 0 ,0 ,0, 0, 0 ,0 ,0, 0, 0 ,0 ,0, 0, 0 ,0 ,0, 0, 0 ,0 ,0)
+d_b_3012s <- c(-1.8, -1.5, -1.2, -0.9, -0.6, -0.3, 0.3, 0.6, 0.9, 1.2, 1.5, 1.8,0, 0, 0 ,0 ,0, 0, 0, 0 ,0 ,0 ,0, 0, 0 ,0 ,0 ,0, 0, 0)
+d_b_3018s <- c(-1.8, -1.6, -1.4, -1.2, -1.0, -0.8, -0.6, -0.4, -0.2, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4, 1.6, 1.8, 0, 0 ,0 ,0, 0, 0 ,0 ,0, 0, 0 ,0 ,0)   
+
+# list delta_b for gradient DIF patterns
+d_b_1002g <- c(2.0, 1.0, 0, 0, 0, 0, 0, 0, 0 ,0)
+d_b_1004g <- c(2.0, 1.5, 1.0, 0.5, 0, 0, 0, 0, 0 ,0)
+d_b_1006g <- c(2.0, 1.7, 1.4, 1.1, 0.8, 0.5, 0, 0, 0, 0)
+d_b_3006g <- c(2.0, 1.7, 1.4, 1.1, 0.8, 0.5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+d_b_3012g <- c(2.0, 1.8, 1.6, 1.4, 1.2, 1.0, 0.8, 0.6, 0.4, 0.3, 0.2, 0.1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+d_b_3018g <- c(1.8, 1.7, 1.6, 1.5, 1.4, 1.3, 1.2, 1.1, 1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+
+# Create 4 variables to store DIF patterns
+s_dif_10items <- cbind(d_b_1002s, d_b_1004s, d_b_1006s)
+s_dif_30items <- cbind(d_b_3006s, d_b_3012s, d_b_3018s)
+
+g_dif_10items <- cbind(d_b_1002g, d_b_1004g, d_b_1006g)
+g_dif_30items <- cbind(d_b_3006g, d_b_3012g, d_b_3018g)
+```
+
+
+## Responses Generating Function 
+```{r}
+gen_response <- function(n_item, size, dif){ 
+  b_0 <- matrix(rnorm(n_item, 0, 1))
+  sigma <- matrix(1)
+  type <- rep('dich', n_item)
+  a <- matrix(rep(1, n_item))
+  df = ''
+  n_lc = length(size)
+  if (n_lc == 2){
+    df_lcr = simdata(a = a, d = b_0, itemtype = type, N = size[1], mu = 0, sigma = sigma)
+    b_lc1 = b_0 + dif
+    df_lcf1 = simdata(a = a, d = b_lc1, itemtype = type, N = size[2], mu = 1, sigma = sigma)
+    #combine reference lc and focal lc datasets
+    df = as.data.frame(rbind(df_lcr, df_lcf1))
+    #add identifiers for each row/observation
+    df$lc = c(rep('lc_r', size[1]), rep('lc_f1', size[2]))
+  } else{
+    df_lcr = simdata(a = a, d = b_0, itemtype = type, N = size[1], mu = 0, sigma = sigma)
+    b_lc1 = b_0 + dif
+    b_lc2 = b_0 + 2*dif
+    df_lcf1 = simdata(a = a, d = b_lc1, itemtype = type, N = size[2], mu = 1, sigma = sigma)
+    df_lcf2 = simdata(a = a, d = b_lc2, itemtype = type, N = size[3], mu = -1, sigma = sigma)
+    #combine lc_r and lc_f1 and lc_f2
+    df = as.data.frame(rbind(df_lcr, df_lcf1, df_lcf2))
+    #add identifiers
+    df$lc = c(rep('lc_r', size[1]), rep('lc_f1', size[2]), rep('lc_f2', size[3]))
+  }
+return(df)
+}
+
+```
+
+
+## Parameter Recovery Simulation Function
+```{r}
+par_reco_sim <- function(dif, size_of_lc){
+  
+  set.seed(123)
+  
+  # Set number of replications
+  n_rep = 200
+  # Set number of items
+  n_item = length(dif)
+  # Number of latent classes
+  n_lc = length(size_of_lc)
+  # Create a matrix to store item difficulty parameters for every replication
+  dif_matrix = matrix(NA, n_rep, n_item)
+  # Matrix for 2*dif for third latent class
+  dif_matrix_2 = matrix(NA, n_rep, n_item)
+  # Create a matrix to store proportion of latent classes
+  p_matrix = matrix(NA, n_rep, n_lc)  
+
+#############################################################################
+
+  if (n_lc == 2){
+    # Simulation Loop
+    for (rep in 1: n_rep){
+      test = gen_response(n_item, size_of_lc, dif)
+      m <- raschmix(as.matrix(test[, 1:n_item]), k = n_lc, scores = "saturated", nrep = 1)
+      results = worth(m)
+      for(j in 1:n_item){
+        dif_matrix[rep, j] = abs(results[j, 2] - results[j, 1])   # Get DIF after a replication
+      }
+      p_matrix[rep, 1] = parameters(m, which = 'concomitant')[1] # Record proportion of latent classes
+      p_matrix[rep, 2] = parameters(m, which = 'concomitant')[2] # Record proportion of latent classes
+    }
+    # Stop the clock and sotre runtime in rt
+    rt = (proc.time() - ptm)[1:3]
+    outcome = cbind(dif_matrix, p_matrix)
+    return(outcome)
+  }
+  else{
+    for (rep in 1: n_rep){
+      test = gen_response(n_item, size_of_lc, dif)
+      m <- raschmix(as.matrix(test[, 1:n_item]), k = n_lc, scores = "saturated", nrep = 1)
+      results = worth(m)
+      for(j in 1:n_item){
+        dif_matrix[rep, j] = abs(results[j, 2] - results[j, 1])   # Get DIF after a replication
+        dif_matrix_2[rep, j] = abs(results[j, 3] - results[j, 1]) # Get 2*DIF between third latent class and referenc latent class
+      }
+      p_matrix[rep, 1] = parameters(m, which = 'concomitant')[1] # Record proportion of latent classes
+      p_matrix[rep, 2] = parameters(m, which = 'concomitant')[2] # Record proportion of latent classes
+      p_matrix[rep, 3] = parameters(m, which = 'concomitant')[3] # Record proportion of latent classes
+    }
+    outcome = cbind(dif_matrix, dif_matrix_2, p_matrix)
+    return(outcome)
+  }    
+}
+```
+
+ 
+## DIF Visualizaiton Function
+```{r}
+dif_viz <- function (dif, dif_sim_matrix){
+  # Number of DIF item
+  n_dif = length(which(dif != 0)) # only graph DIF items
+  
+  if (n_dif %% 6 == 0){
+    if (n_dif==18){
+      par(mfrow=c(3, 3))
+    } else {
+    par(mfrow=c(2, 3))
+    }  
+  } else {
+    if (n_dif==2){
+      par(mfrow=c(1, 2))
+    } else {
+      par(mfrow=c(2, 2))
+    }
+  }
+  for(i in 1: n_dif){
+    true_dif = abs(dif[i])
+    
+    plot(c(1:nrow(dif_sim_matrix)), dif_sim_matrix[, i], type = 'l', ylim = c(0,5), xlab = 'Replication', ylab = 'Recovered DIF', main = paste('Item', toString(i),'True DIF:',toString(true_dif)), cex.lab=1.2, cex.main=1.2, font.main=7)
+    
+    # Add a red horizotal line marking mean of DIF from replications
+    abline(h = mean(dif_sim_matrix[,i]), col = 'red')
+  
+    # Add a green horizontal line marking true DIF
+    abline(h = true_dif, col = 'green')
+    
+    # Add lengend
+    legend('top', legend = c('Mean DIF','True DIF'), lty = 1, col = c('red', 'green'), lwd=2, cex=1, y.intersp=0.5, x.intersp = 0.12, horiz = TRUE, bty="n")
+  }
+}
+```
+
+
+## Classifier Parameter Visualization Function
+```{r}
+p_viz <- function (p_matrix, size){
+  if (length(size) == 2){
+    # True proportion
+    true_p <- round(size[1]/sum(size), 3)
+    p_prior <- apply(p_matrix, 1, max)
+    plot(x = c(1:nrow(p_matrix)),y = p_prior, type = "l", ylim = c(0, 1), xlab = "Replication", ylab = 'P of Latent Class', main = paste('Two LC Structure, True P:', toString(true_p)), cex.lab=1, cex.main=1.2, font.main=7)
+    abline(h = true_p, col = 'green')
+    abline(h = mean(p_prior), col = 'red')
+    legend('top', legend = c('Mean P','True P'), lty = 1, col = c('red', 'green'), lwd=2, cex=1, y.intersp=0.5, x.intersp = 0.12, horiz = TRUE, bty="n")  
+  }
+  else{
+    true_p <- c(round(size[1]/sum(size), 2), round(size[3]/sum(size), 2))
+    p_prior <- cbind( max_p = apply(p_matrix, 1, max), min_p = apply(p_matrix, 1, min))
+    plot(x = c(1:nrow(p_matrix)),y = p_prior[,1], type = "l", ylim = c(0, 1), xlab = "Replication", ylab = 'P of Latent Class', main = paste('Three LC Structure, True P:', toString(true_p[1]), toString(true_p[2])), cex.lab=1, cex.main=1.2, font.main=7)
+    points(x = c(1:nrow(p_matrix)),y = p_prior[,2], type = "l")
+    abline(h = true_p[1], col = 'green', lty = 1)
+    abline(h = true_p[2], col = 'green', lty = 2)
+    abline(h = mean(p_prior[,1]), col = 'red', lty = 1)
+    abline(h = mean(p_prior[,2]), col = 'red', lty = 2)
+    legend('topright', legend = c('Ture Max P','True Min P', 'Mean Max P', 'Mean Min P'), col = c('green', 'green', 'red', 'red'), lty = c(1, 2, 1, 2), lwd=2, cex=0.55, y.intersp=0.5, x.intersp = 0.12, horiz = TRUE, bty="n")  
+  }
+}
+```
+
+
+## Generate DIF Descriptive Statistics Table
+```{r}
+gen_dif_table <- function(df1, df2, df3, df4, df5, df6) {
+  table = list()
+  m1 = apply(df1, 2, mean)
+  sd1 = apply(df1, 2, sd)
+  m2 = apply(df2, 2, mean)
+  sd2 = apply(df2, 2, sd)
+  m3 = apply(df3, 2, mean)
+  sd3 = apply(df3, 2, sd)
+  m4 = apply(df4, 2, mean)
+  sd4 = apply(df4, 2, sd)
+  m5 = apply(df5, 2, mean)
+  sd5 = apply(df5, 2, sd)
+  m6 = apply(df6, 2, mean)
+  sd6 = apply(df6, 2, sd)
+  
+  table = rbind(m1, sd1, m2, sd2, m3, sd3, m4, sd4, m5, sd5, m6, sd6)
+  table = as.matrix(table)
+  table = t(table)
+  return (table)
+}
+```
+
+
+#########################################################################################################
+#########################           Parameter Recovery          #########################################
+#########################################################################################################
+
+
+#######################   Parameter Recovery - Two Latent Classes #######################################        
+
+### Fit Rasch Mixture Models
+
+############################ Parameter Recovery - Equal Size - Two Latent Classes - Symmetric DIF #############################################
+
+## 10 items 2 dif items: 1002S - two latent classes - equal size design
+```{r}
+# Add time recorder: start the clock
+ptm <- proc.time()
+dif <- d_b_1002s
+size <- c(1500, 1500)
+
+sim <- par_reco_sim(dif, size)
+dif_1002s_lc2_e <- sim[,1:10]
+p_1002s_lc2_e <- sim[,11:12]
+
+# Stop the clock and sotre runtime in rt
+rt_1002s_lc2_e = (proc.time() - ptm)[1:3]
+
+# Visualize parameter recovery
+# dif recovery
+dif_viz(d_b_1002s, dif_1002s_lc2_e)
+
+# classifier parameter recovery
+p_viz(p_1002s_lc2_e, c(1500,1500))
+```
+
+## 10 items 4 dif items: 1004S - two latent classes - equal size design
+```{r}
+# Add time recorder: start the clock
+ptm <- proc.time()
+dif <- d_b_1004s
+size <- c(1500, 1500)
+
+sim <- par_reco_sim(dif, size)
+dif_1004s_lc2_e <- sim[,1:10]
+p_1004s_lc2_e <- sim[,11:12]
+
+# Stop the clock and sotre runtime in rt
+rt_1004s_lc2_e = (proc.time() - ptm)[1:3]
+
+# Visualize parameter recovery
+# dif recovery
+dif_viz(d_b_1004s, dif_1004s_lc2_e)
+
+# classifier parameter recovery
+p_viz(p_1004s_lc2_e, c(1500, 1500))
+```
+
+## 10 items 6 dif items: 1006S - two latent classes - equal size design
+```{r}
+# Add time recorder: start the clock
+ptm <- proc.time()
+dif <- d_b_1006s
+size <- c(1500, 1500)
+
+sim <- par_reco_sim(dif, size)
+dif_1006s_lc2_e <- sim[,1:10]
+p_1006s_lc2_e <- sim[,11:12]
+
+# Stop the clock and sotre runtime in rt
+rt_1006s_lc2_e = (proc.time() - ptm)[1:3]
+
+# Visualize parameter recovery
+# dif recovery
+dif_viz(d_b_1006s, dif_1006s_lc2_e)
+
+# classifier parameter recovery
+p_viz(p_1006s_lc2_e, size)
+```
+
+## 30 items 6 dif items: 3006S - two latent classes - equal size design
+```{r}
+# Add time recorder: start the clock
+ptm <- proc.time()
+dif <- d_b_3006s
+size <- c(1500, 1500)
+
+sim <- par_reco_sim(dif, size)
+dif_3006s_lc2_e <- sim[,1:30]
+p_3006s_lc2_e <- sim[,31:32]
+
+# Stop the clock and sotre runtime in rt
+rt_3006s_lc2_e = (proc.time() - ptm)[1:3]
+
+# Visualize parameter recovery
+# dif recovery
+dif_viz(d_b_3006s, dif_3006s_lc2_e)
+
+# classifier parameter recovery
+p_viz(p_3006s_lc2_e, size)
+
+```
+
+## 30 items 12 dif items: 3012S - two latent classes - equal size design
+```{r}
+# Add time recorder: start the clock
+ptm <- proc.time()
+dif <- d_b_3012s
+size <- c(1500, 1500)
+
+sim <- par_reco_sim(dif, size)
+dif_3012s_lc2_e <- sim[,1:30]
+p_3012s_lc2_e <- sim[,31:32]
+
+# Stop the clock and sotre runtime in rt
+rt_3012s_lc2_e = (proc.time() - ptm)[1:3]
+
+# Visualize parameter recovery
+# dif recovery
+dif_viz(d_b_3012s, dif_3012s_lc2_e)
+
+# classifier parameter recovery
+p_viz(p_3012s_lc2_e, size)
+```
+
+## 30 items 18 dif items: 3018S - two latent classes - equal size design
+```{r}
+# Add time recorder: start the clock
+ptm <- proc.time()
+dif <- d_b_3018s
+size <- c(1500, 1500)
+
+sim <- par_reco_sim(dif, size)
+dif_3018s_lc2_e <- sim[,1:30]
+p_3018s_lc2_e <- sim[,31:32]
+
+# Stop the clock and sotre runtime in rt
+rt_3018s_lc2_e = (proc.time() - ptm)[1:3]
+
+# Visualize parameter recovery
+# dif recovery
+dif_viz(d_b_3018s, dif_3018s_lc2_e)
+
+# classifier parameter recovery
+p_viz(p_3018s_lc2_e, size)
+```
+
+
+############################ Parameter Recovery - Unequal Size - Two Latent Classes - Symmetric DIF #############################################
+
+## 10 items 2 dif items: 1002S - two latent classes - unequal size design
+```{r}
+# Add time recorder: start the clock
+ptm <- proc.time()
+dif <- d_b_1002s
+size <- c(2000, 1000)
+
+sim <- par_reco_sim(dif, size)
+dif_1002s_lc2_u <- sim[,1:10]
+p_1002s_lc2_u <- sim[,11:12]
+
+# Stop the clock and sotre runtime in rt
+rt_1002s_lc2_u = (proc.time() - ptm)[1:3]
+
+# Visualize parameter recovery
+# dif recovery
+dif_viz(d_b_1002s, dif_1002s_lc2_u)
+
+# classifier parameter recovery
+p_viz(p_1002s_lc2_u, size)
+```
+
+## 10 items 4 dif items: 1004S - two latent classes - unequal size design
+```{r}
+# Add time recorder: start the clock
+ptm <- proc.time()
+dif <- d_b_1004s
+size <- c(2000, 1000)
+
+sim <- par_reco_sim(dif, size)
+dif_1004s_lc2_u <- sim[,1:10]
+p_1004s_lc2_u <- sim[,11:12]
+
+# Stop the clock and sotre runtime in rt
+rt_1004s_lc2_u = (proc.time() - ptm)[1:3]
+
+# Visualize parameter recovery
+# dif recovery
+dif_viz(d_b_1004s, dif_1004s_lc2_u)
+
+# classifier parameter recovery
+p_viz(p_1004s_lc2_u, size)
+```
+
+## 10 items 6 dif items: 1006S - two latent classes - unequal size design
+```{r}
+# Add time recorder: start the clock
+ptm <- proc.time()
+dif <- d_b_1006s
+size <- c(2000, 1000)
+
+sim <- par_reco_sim(dif, size)
+dif_1006s_lc2_u <- sim[,1:10]
+p_1006s_lc2_u <- sim[,11:12]
+
+# Stop the clock and sotre runtime in rt
+rt_1006s_lc2_u = (proc.time() - ptm)[1:3]
+
+# Visualize parameter recovery
+# dif recovery
+dif_viz(d_b_1006s, dif_1006s_lc2_u)
+
+# classifier parameter recovery
+p_viz(p_1006s_lc2_u, size)
+```
+
+## 30 items 6 dif items: 3006S - two latent classes - unequal size design
+```{r}
+# Add time recorder: start the clock
+ptm <- proc.time()
+dif <- d_b_3006s
+size <- c(2000, 1000)
+
+sim <- par_reco_sim(dif, size)
+dif_3006s_lc2_u <- sim[,1:30]
+p_3006s_lc2_u <- sim[,31:32]
+
+# Stop the clock and sotre runtime in rt
+rt_3006s_lc2_u = (proc.time() - ptm)[1:3]
+
+# Visualize parameter recovery
+# dif recovery
+dif_viz(d_b_3006s, dif_3006s_lc2_u)
+
+# classifier parameter recovery
+p_viz(p_3006s_lc2_u, size)
+
+```
+
+## 30 items 12 dif items: 3012S - two latent classes - unequal size design
+```{r}
+# Add time recorder: start the clock
+ptm <- proc.time()
+dif <- d_b_3012s
+size <- c(2000, 1000)
+
+sim <- par_reco_sim(dif, size)
+dif_3012s_lc2_u <- sim[,1:30]
+p_3012s_lc2_u <- sim[,31:32]
+
+# Stop the clock and sotre runtime in rt
+rt_3012s_lc2_u = (proc.time() - ptm)[1:3]
+
+# Visualize parameter recovery
+# dif recovery
+dif_viz(d_b_3012s, dif_3012s_lc2_u)
+
+# classifier parameter recovery
+p_viz(p_3012s_lc2_u, size)
+```
+
+## 30 items 18 dif items: 3018S - two latent classes - unequal size design
+```{r}
+# Add time recorder: start the clock
+ptm <- proc.time()
+dif <- d_b_3018s
+size <- c(2000, 1000)
+
+sim <- par_reco_sim(dif, size)
+dif_3018s_lc2_u <- sim[,1:30]
+p_3018s_lc2_u <- sim[,31:32]
+
+# Stop the clock and sotre runtime in rt
+rt_3018s_lc2_u = (proc.time() - ptm)[1:3]
+
+# Visualize parameter recovery
+# dif recovery
+dif_viz(d_b_3018s, dif_3018s_lc2_u)
+
+# classifier parameter recovery
+p_viz(p_3018s_lc2_u, size)
+```
+
+
+############################ Parameter Recovery - Equal Size - Two Latent Classes - Gradient DIF #############################################
+
+## 10 items 2 dif items: 1002g - two latent classes - equal size design
+```{r}
+# Add time recorder: start the clock
+ptm <- proc.time()
+dif <- d_b_1002g
+size <- c(1500, 1500)
+
+sim <- par_reco_sim(dif, size)
+dif_1002g_lc2_e <- sim[,1:10]
+p_1002g_lc2_e <- sim[,11:12]
+
+# Stop the clock and sotre runtime in rt
+rt_1002g_lc2_e = (proc.time() - ptm)[1:3]
+
+# Visualize parameter recovery
+# dif recovery
+dif_viz(d_b_1002g, dif_1002g_lc2_e)
+
+# classifier parameter recovery
+p_viz(p_1002g_lc2_e, size)
+```
+
+## 10 items 4 dif items: 1004g - two latent classes - equal size design
+```{r}
+# Add time recorder: start the clock
+ptm <- proc.time()
+dif <- d_b_1004g
+size <- c(1500, 1500)
+
+sim <- par_reco_sim(dif, size)
+dif_1004g_lc2_e <- sim[,1:10]
+p_1004g_lc2_e <- sim[,11:12]
+
+# Stop the clock and sotre runtime in rt
+rt_1004g_lc2_e = (proc.time() - ptm)[1:3]
+
+# Visualize parameter recovery
+# dif recovery
+dif_viz(d_b_1004g, dif_1004g_lc2_e)
+
+# classifier parameter recovery
+p_viz(p_1004g_lc2_e, size)
+```
+
+## 10 items 6 dif items: 1006g - two latent classes - equal size design
+```{r}
+# Add time recorder: start the clock
+ptm <- proc.time()
+dif <- d_b_1006g
+size <- c(1500, 1500)
+
+sim <- par_reco_sim(dif, size)
+dif_1006g_lc2_e <- sim[,1:10]
+p_1006g_lc2_e <- sim[,11:12]
+
+# Stop the clock and sotre runtime in rt
+rt_1006g_lc2_e = (proc.time() - ptm)[1:3]
+
+# Visualize parameter recovery
+# dif recovery
+dif_viz(d_b_1006g, dif_1006g_lc2_e)
+
+# classifier parameter recovery
+p_viz(p_1006g_lc2_e, size)
+```
+
+## 30 items 6 dif items: 3006g - two latent classes - equal size design
+```{r, warning = False}
+# Add time recorder: start the clock
+ptm <- proc.time()
+dif <- d_b_3006g
+size <- c(1500, 1500)
+
+sim <- par_reco_sim(dif, size)
+dif_3006g_lc2_e <- sim[,1:30]
+p_3006g_lc2_e <- sim[,31:32]
+
+# Stop the clock and sotre runtime in rt
+rt_3006g_lc2_e = (proc.time() - ptm)[1:3]
+
+# Visualize parameter recovery
+# dif recovery
+dif_viz(d_b_3006g, dif_3006g_lc2_e)
+
+# classifier parameter recovery
+p_viz(p_3006g_lc2_e, size)
+```
+
+## 30 items 12 dif items: 3012g - two latent classes - equal size design
+```{r}
+# Add time recorder: start the clock
+ptm <- proc.time()
+dif <- d_b_3012g
+size <- c(1500, 1500)
+
+sim <- par_reco_sim(dif, size)
+dif_3012g_lc2_e <- sim[,1:30]
+p_3012g_lc2_e <- sim[,31:32]
+
+# Stop the clock and sotre runtime in rt
+rt_3012g_lc2_e = (proc.time() - ptm)[1:3]
+
+# Visualize parameter recovery
+# dif recovery
+dif_viz(d_b_3012g, dif_3012g_lc2_e)
+
+# classifier parameter recovery
+p_viz(p_3012g_lc2_e, size)
+```
+
+## 30 items 18 dif items: 3018g - two latent classes - equal size design
+```{r}
+# Add time recorder: start the clock
+ptm <- proc.time()
+dif <- d_b_3018g
+size <- c(1500, 1500)
+
+sim <- par_reco_sim(dif, size)
+dif_3018g_lc2_e <- sim[,1:30]
+p_3018g_lc2_e <- sim[,31:32]
+
+# Stop the clock and sotre runtime in rt
+rt_3018g_lc2_e = (proc.time() - ptm)[1:3]
+
+# Visualize parameter recovery
+# dif recovery
+dif_viz(d_b_3018g, dif_3018g_lc2_e)
+
+# classifier parameter recovery
+p_viz(p_3018g_lc2_e, size)
+```
+
+
+############################ Parameter Recovery - Unequal Size - Two Latent Classes - Gradient DIF #############################################
+
+## 10 items 2 dif items: 1002g - two latent classes - unequal size design
+```{r}
+# Add time recorder: start the clock
+ptm <- proc.time()
+dif <- d_b_1002g
+size <- c(2000, 1000)
+
+sim <- par_reco_sim(dif, size)
+dif_1002g_lc2_u <- sim[,1:10]
+p_1002g_lc2_u <- sim[,11:12]
+
+# Stop the clock and sotre runtime in rt
+rt_1002g_lc2_u = (proc.time() - ptm)[1:3]
+
+# Visualize parameter recovery
+# dif recovery
+dif_viz(d_b_1002g, dif_1002g_lc2_u)
+
+# classifier parameter recovery
+p_viz(p_1002g_lc2_u, size)
+```
+
+## 10 items 4 dif items: 1004g - two latent classes - unequal size design
+```{r}
+# Add time recorder: start the clock
+ptm <- proc.time()
+dif <- d_b_1004g
+size <- c(2000, 1000)
+
+sim <- par_reco_sim(dif, size)
+dif_1004g_lc2_u <- sim[,1:10]
+p_1004g_lc2_u <- sim[,11:12]
+
+# Stop the clock and sotre runtime in rt
+rt_1004g_lc2_u = (proc.time() - ptm)[1:3]
+
+# Visualize parameter recovery
+# dif recovery
+dif_viz(d_b_1004g, dif_1004g_lc2_u)
+
+# classifier parameter recovery
+p_viz(p_1004g_lc2_u, size)
+```
+
+## 10 items 6 dif items: 1006g - two latent classes - unequal size design
+```{r}
+# Add time recorder: start the clock
+ptm <- proc.time()
+dif <- d_b_1006g
+size <- c(2000, 1000)
+
+sim <- par_reco_sim(dif, size)
+dif_1006g_lc2_u <- sim[,1:10]
+p_1006g_lc2_u <- sim[,11:12]
+
+# Stop the clock and sotre runtime in rt
+rt_1006g_lc2_u = (proc.time() - ptm)[1:3]
+
+# Visualize parameter recovery
+# dif recovery
+dif_viz(d_b_1006g, dif_1006g_lc2_u)
+
+# classifier parameter recovery
+p_viz(p_1006g_lc2_u, size)
+```
+
+## 30 items 6 dif items: 3006g - two latent classes - unequal size design
+```{r}
+# Add time recorder: start the clock
+ptm <- proc.time()
+dif <- d_b_3006g
+size <- c(2000, 1000)
+
+sim <- par_reco_sim(dif, size)
+dif_3006g_lc2_u <- sim[,1:30]
+p_3006g_lc2_u <- sim[,31:32]
+
+# Stop the clock and sotre runtime in rt
+rt_3006g_lc2_u = (proc.time() - ptm)[1:3]
+
+# Visualize parameter recovery
+# dif recovery
+dif_viz(d_b_3006g, dif_3006g_lc2_u)
+
+# classifier parameter recovery
+p_viz(p_3006g_lc2_u, size)
+
+```
+
+## 30 items 12 dif items: 3012g - two latent classes - unequal size design
+```{r}
+# Add time recorder: start the clock
+ptm <- proc.time()
+dif <- d_b_3012g
+size <- c(2000, 1000)
+
+sim <- par_reco_sim(dif, size)
+dif_3012g_lc2_u <- sim[,1:30]
+p_3012g_lc2_u <- sim[,31:32]
+
+# Stop the clock and sotre runtime in rt
+rt_3012g_lc2_u = (proc.time() - ptm)[1:3]
+
+# Visualize parameter recovery
+# dif recovery
+dif_viz(d_b_3012g, dif_3012g_lc2_u)
+
+# classifier parameter recovery
+p_viz(p_3012g_lc2_u, size)
+```
+
+## 30 items 18 dif items: 3018g - two latent classes - unequal size design
+```{r}
+# Add time recorder: start the clock
+ptm <- proc.time()
+dif <- d_b_3018g
+size <- c(2000, 1000)
+
+sim <- par_reco_sim(dif, size)
+dif_3018g_lc2_u <- sim[,1:30]
+p_3018g_lc2_u <- sim[,31:32]
+
+# Stop the clock and sotre runtime in rt
+rt_3018g_lc2_u = (proc.time() - ptm)[1:3]
+
+# Visualize parameter recovery
+# dif recovery
+dif_viz(d_b_3018g, dif_3018g_lc2_u)
+
+# classifier parameter recovery
+p_viz(p_3018g_lc2_u, size)
+```
+
+
+
+
+#######################   Parameter Recovery - Three Latent Classes #######################################        
+
+### Fit Rasch Mixture Models
+
+############################ Parameter Recovery - Equal Size - Three Latent Classes - Symmetric DIF #############################################
+
+## 10 items 2 dif items: 1002S - three latent classes - equal size design
+```{r}
+# Add time recorder: start the clock
+ptm <- proc.time()
+dif <- d_b_1002s
+dif_2 <- dif*2
+size <- c(1000, 1000, 1000)
+
+sim <- par_reco_sim(dif, size)
+dif_1002s_lc3_e_1 <- sim[, 1:10]
+dif_1002s_lc3_e_2 <- sim[, 11:20]
+p_1002s_lc3_e <- sim[,21:23]
+
+# Stop the clock and sotre runtime in rt
+rt_1002s_lc3_e = (proc.time() - ptm)[1:3]
+
+# Visualize parameter recovery
+# dif recovery
+dif_viz(dif, dif_1002s_lc3_e_1)
+dif_viz(dif_2, dif_1002s_lc3_e_2)
+
+# classifier parameter recovery
+p_viz(p_1002s_lc3_e, size)
+
+```
+
+## 10 items 4 dif items: 1004S - three latent classes - equal size design
+```{r}
+# Add time recorder: start the clock
+ptm <- proc.time()
+dif <- d_b_1004s
+dif_2 <- dif*2
+size <- c(1000, 1000, 1000)
+
+sim <- par_reco_sim(dif, size)
+dif_1004s_lc3_e_1 <- sim[, 1:10]
+dif_1004s_lc3_e_2 <- sim[, 11:20]
+p_1004s_lc3_e <- sim[,21:23]
+
+# Stop the clock and sotre runtime in rt
+rt_1004s_lc3_e = (proc.time() - ptm)[1:3]
+
+# Visualize parameter recovery
+# dif recovery
+dif_viz(dif, dif_1004s_lc3_e_1)
+dif_viz(dif_2, dif_1004s_lc3_e_2)
+
+# classifier parameter recovery
+p_viz(p_1004s_lc3_e, size)
+
+```
+
+## 10 items 6 dif items: 1006S - three latent classes - equal size design
+```{r}
+# Add time recorder: start the clock
+ptm <- proc.time()
+dif <- d_b_1006s
+dif_2 <- dif*2
+size <- c(1000, 1000, 1000)
+
+sim <- par_reco_sim(dif, size)
+dif_1006s_lc3_e_1 <- sim[,1:10]
+dif_1006s_lc3_e_2 <- sim[,11:20]
+p_1006s_lc3_e <- sim[,21:23]
+
+# Stop the clock and sotre runtime in rt
+rt_1006s_lc3_e = (proc.time() - ptm)[1:3]
+
+# Visualize parameter recovery
+# dif recovery
+dif_viz(dif, dif_1006s_lc3_e_1)
+dif_viz(dif_2, dif_1006s_lc3_e_2)
+
+# classifier parameter recovery
+p_viz(p_1006s_lc3_e, size)
+
+```
+
+## 30 items 6 dif items: 3006S - three latent classes - equal size design
+```{r}
+# Add time recorder: start the clock
+ptm <- proc.time()
+dif <- d_b_3006s
+dif_2 <- dif*2
+size <- c(1000, 1000, 1000)
+
+sim <- par_reco_sim(dif, size)
+dif_3006s_lc3_e_1 <- sim[,1:30]
+dif_3006s_lc3_e_2 <- sim[,31:60]
+p_3006s_lc3_e <- sim[,61:63]
+
+# Stop the clock and sotre runtime in rt
+rt_3006s_lc3_e = (proc.time() - ptm)[1:3]
+
+# Visualize parameter recovery
+# dif recovery
+dif_viz(dif, dif_3006s_lc3_e_1)
+dif_viz(dif_2, dif_3006s_lc3_e_2)
+
+# classifier parameter recovery
+p_viz(p_3006s_lc3_e, size)
+
+```
+
+## 30 items 12 dif items: 3012S - three latent classes - equal size design
+```{r}
+# Add time recorder: start the clock
+ptm <- proc.time()
+dif <- d_b_3012s
+dif_2 <- dif*2
+size <- c(1000, 1000, 1000)
+
+sim <- par_reco_sim(dif, size)
+dif_3012s_lc3_e_1 <- sim[,1:30]
+dif_3012s_lc3_e_2 <- sim[,31:60]
+p_3012s_lc3_e <- sim[,61:63]
+
+# Stop the clock and sotre runtime in rt
+rt_3012s_lc3_e = (proc.time() - ptm)[1:3]
+
+# Visualize parameter recovery
+# dif recovery
+dif_viz(dif, dif_3012s_lc3_e_1)
+dif_viz(dif_2, dif_3012s_lc3_e_2)
+
+# classifier parameter recovery
+p_viz(p_3012s_lc3_e, size)
+
+```
+
+## 30 items 18 dif items: 3018S - three latent classes - equal size design
+```{r}
+# Add time recorder: start the clock
+ptm <- proc.time()
+dif <- d_b_3018s
+dif_2 <- dif*2
+size <- c(1000, 1000, 1000)
+
+sim <- par_reco_sim(dif, size)
+dif_3018s_lc3_e_1 <- sim[,1:30]
+dif_3018s_lc3_e_2 <- sim[,31:60]
+p_3018s_lc3_e <- sim[,61:63]
+
+# Stop the clock and sotre runtime in rt
+rt_3018s_lc3_e = (proc.time() - ptm)[1:3]
+
+# Visualize parameter recovery
+# dif recovery
+dif_viz(dif, dif_3018s_lc3_e_1)
+dif_viz(dif_2, dif_3018s_lc3_e_2)
+
+# classifier parameter recovery
+p_viz(p_3018s_lc3_e, size)
+
+```
+
+
+############################ Parameter Recovery - Unequal Size - Three Latent Classes - Symmetric DIF #############################################
+
+## 10 items 2 dif items: 1002S - three latent classes - unequal size design
+```{r}
+# Add time recorder: start the clock
+ptm <- proc.time()
+dif <- d_b_1002s
+dif_2 <- dif*2
+size <- c(1500, 1000, 500)
+
+sim <- par_reco_sim(dif, size)
+dif_1002s_lc3_u_1 <- sim[,1:10]
+dif_1002s_lc3_u_2 <- sim[,11:20]
+p_1002s_lc3_u <- sim[,21:23]
+
+# Stop the clock and sotre runtime in rt
+rt_1002s_lc3_u = (proc.time() - ptm)[1:3]
+
+# Visualize parameter recovery
+# dif recovery
+dif_viz(dif, dif_1002s_lc3_u_1)
+dif_viz(dif_2, dif_1002s_lc3_u_2)
+
+# classifier parameter recovery
+p_viz(p_1002s_lc3_u, size)
+
+```
+
+## 10 items 4 dif items: 1004S - three latent classes - unequal size design
+```{r}
+# Add time recorder: start the clock
+ptm <- proc.time()
+dif <- d_b_1004s
+dif_2 <- dif*2
+size <- c(1500, 1000, 500)
+
+sim <- par_reco_sim(dif, size)
+dif_1004s_lc3_u_1 <- sim[,1:10]
+dif_1004s_lc3_u_2 <- sim[,11:20]
+p_1004s_lc3_u <- sim[,21:23]
+
+# Stop the clock and sotre runtime in rt
+rt_1004s_lc3_u = (proc.time() - ptm)[1:3]
+
+# Visualize parameter recovery
+# dif recovery
+dif_viz(dif, dif_1004s_lc3_u_1)
+dif_viz(dif_2, dif_1004s_lc3_u_2)
+
+# classifier parameter recovery
+p_viz(p_1004s_lc3_u, size)
+
+```
+
+## 10 items 6 dif items: 1006S - three latent classes - unequal size design
+```{r}
+# Add time recorder: start the clock
+ptm <- proc.time()
+dif <- d_b_1006s
+dif_2 <- dif*2
+size <- c(1500, 1000, 500)
+
+sim <- par_reco_sim(dif, size)
+dif_1006s_lc3_u_1 <- sim[,1:10]
+dif_1006s_lc3_u_2 <- sim[,11:20]
+p_1006s_lc3_u <- sim[,21:23]
+
+# Stop the clock and sotre runtime in rt
+rt_1006s_lc3_u = (proc.time() - ptm)[1:3]
+
+# Visualize parameter recovery
+# dif recovery
+dif_viz(dif, dif_1006s_lc3_u_1)
+dif_viz(dif_2, dif_1006s_lc3_u_2)
+
+# classifier parameter recovery
+p_viz(p_1006s_lc3_u, size)
+
+```
+
+## 30 items 6 dif items: 3006S - three latent classes - unequal size design
+```{r}
+# Add time recorder: start the clock
+ptm <- proc.time()
+dif <- d_b_3006s
+dif_2 <- dif*2
+size <- c(1500, 1000, 500)
+
+sim <- par_reco_sim(dif, size)
+dif_3006s_lc3_u_1 <- sim[,1:30]
+dif_3006s_lc3_u_2 <- sim[,31:60]
+p_3006s_lc3_u <- sim[,61:63]
+
+# Stop the clock and sotre runtime in rt
+rt_3006s_lc3_u = (proc.time() - ptm)[1:3]
+
+# Visualize parameter recovery
+# dif recovery
+dif_viz(dif, dif_3006s_lc3_u_1)
+dif_viz(dif_2, dif_3006s_lc3_u_2)
+
+# classifier parameter recovery
+p_viz(p_3006s_lc3_u, size)
+
+```
+
+## 30 items 12 dif items: 3012S - three latent classes - unequal size design
+```{r}
+# Add time recorder: start the clock
+ptm <- proc.time()
+dif <- d_b_3012s
+dif_2 <- dif*2
+size <- c(1500, 1000, 500)
+
+sim <- par_reco_sim(dif, size)
+dif_3012s_lc3_u_1 <- sim[,1:30]
+dif_3012s_lc3_u_2 <- sim[,31:60]
+p_3012s_lc3_u <- sim[,61:63]
+
+# Stop the clock and sotre runtime in rt
+rt_3012s_lc3_u = (proc.time() - ptm)[1:3]
+
+# Visualize parameter recovery
+# dif recovery
+dif_viz(dif, dif_3012s_lc3_u_1)
+dif_viz(dif_2, dif_3012s_lc3_u_2)
+
+# classifier parameter recovery
+p_viz(p_3012s_lc3_u, size)
+
+```
+
+## 30 items 18 dif items: 3018S - three latent classes - unequal size design
+```{r}
+# Add time recorder: start the clock
+ptm <- proc.time()
+dif <- d_b_3018s
+dif_2 <- dif*2
+size <- c(1500, 1000, 500)
+
+sim <- par_reco_sim(dif, size)
+dif_3018s_lc3_u_1 <- sim[,1:30]
+dif_3018s_lc3_u_2 <- sim[,31:60]
+p_3018s_lc3_u <- sim[,61:63]
+
+# Stop the clock and sotre runtime in rt
+rt_3018s_lc3_u = (proc.time() - ptm)[1:3]
+
+# Visualize parameter recovery
+# dif recovery
+dif_viz(dif, dif_3018s_lc3_u_1)
+dif_viz(dif_2, dif_3018s_lc3_u_2)
+
+# classifier parameter recovery
+p_viz(p_3018s_lc3_u, size)
+
+```
+
+
+############################ Parameter Recovery - Equal Size - Three Latent Classes - Gradient DIF #############################################
+
+## 10 items 2 dif items: 1002g - three latent classes - equal size design
+```{r}
+# Add time recorder: start the clock
+ptm <- proc.time()
+dif <- d_b_1002g
+dif_2 <- dif*2
+size <- c(1000, 1000, 1000)
+
+sim <- par_reco_sim(dif, size)
+dif_1002g_lc3_e_1 <- sim[,1:10]
+dif_1002g_lc3_e_2 <- sim[,11:20]
+p_1002g_lc3_e <- sim[,21:23]
+
+# Stop the clock and sotre runtime in rt
+rt_1002g_lc3_e = (proc.time() - ptm)[1:3]
+
+# Visualize parameter recovery
+# dif recovery
+dif_viz(dif, dif_1002g_lc3_e_1)
+dif_viz(dif_2, dif_1002g_lc3_e_2)
+
+# classifier parameter recovery
+p_viz(p_1002g_lc3_e, size)
+
+```
+
+## 10 items 4 dif items: 1004g - three latent classes - equal size design
+```{r}
+# Add time recorder: start the clock
+ptm <- proc.time()
+dif <- d_b_1004g
+dif_2 <- dif*2
+size <- c(1000, 1000, 1000)
+
+sim <- par_reco_sim(dif, size)
+dif_1004g_lc3_e_1 <- sim[,1:10]
+dif_1004g_lc3_e_2 <- sim[,11:20]
+p_1004g_lc3_e <- sim[,21:23]
+
+# Stop the clock and sotre runtime in rt
+rt_1004g_lc3_e = (proc.time() - ptm)[1:3]
+
+# Visualize parameter recovery
+# dif recovery
+dif_viz(dif, dif_1004g_lc3_e_1)
+dif_viz(dif_2, dif_1004g_lc3_e_2)
+
+# classifier parameter recovery
+p_viz(p_1004g_lc3_e, size)
+
+```
+
+## 10 items 6 dif items: 1006g - three latent classes - equal size design
+```{r}
+# Add time recorder: start the clock
+ptm <- proc.time()
+dif <- d_b_1006g
+dif_2 <- dif*2
+size <- c(1000, 1000, 1000)
+
+sim <- par_reco_sim(dif, size)
+dif_1006g_lc3_e_1 <- sim[,1:10]
+dif_1006g_lc3_e_2 <- sim[,11:20]
+p_1006g_lc3_e <- sim[,21:23]
+
+# Stop the clock and sotre runtime in rt
+rt_1006g_lc3_e = (proc.time() - ptm)[1:3]
+
+# Visualize parameter recovery
+# dif recovery
+dif_viz(dif, dif_1006g_lc3_e_1)
+dif_viz(dif_2, dif_1006g_lc3_e_2)
+
+# classifier parameter recovery
+p_viz(p_1006g_lc3_e, size)
+
+```
+
+## 30 items 6 dif items: 3006g - three latent classes - equal size design
+```{r, warning = False}
+# Add time recorder: start the clock
+ptm <- proc.time()
+dif <- d_b_3006g
+dif_2 <- dif*2
+size <- c(1000, 1000, 1000)
+
+sim <- par_reco_sim(dif, size)
+dif_3006g_lc3_e_1 <- sim[,1:30]
+dif_3006g_lc3_e_2 <- sim[,31:60]
+p_3006g_lc3_e <- sim[,61:63]
+
+# Stop the clock and sotre runtime in rt
+rt_3006g_lc3_e = (proc.time() - ptm)[1:3]
+
+# Visualize parameter recovery
+# dif recovery
+dif_viz(dif, dif_3006g_lc3_e_1)
+dif_viz(dif_2, dif_3006g_lc3_e_2)
+
+# classifier parameter recovery
+p_viz(p_3006g_lc3_e, size)
+
+```
+
+## 30 items 12 dif items: 3012g - three latent classes - equal size design
+```{r}
+# Add time recorder: start the clock
+ptm <- proc.time()
+dif <- d_b_3012g
+dif_2 <- dif*2
+size <- c(1000, 1000, 1000)
+
+sim <- par_reco_sim(dif, size)
+dif_3012g_lc3_e_1 <- sim[,1:30]
+dif_3012g_lc3_e_2 <- sim[,31:60]
+p_3012g_lc3_e <- sim[,61:63]
+
+# Stop the clock and sotre runtime in rt
+rt_3012g_lc3_e = (proc.time() - ptm)[1:3]
+
+# Visualize parameter recovery
+# dif recovery
+dif_viz(dif, dif_3012g_lc3_e_1)
+dif_viz(dif_2, dif_3012g_lc3_e_2)
+
+# classifier parameter recovery
+p_viz(p_3012g_lc3_e, size)
+
+```
+
+## 30 items 18 dif items: 3018g - three latent classes - equal size design
+```{r}
+# Add time recorder: start the clock
+ptm <- proc.time()
+dif <- d_b_3018g
+dif_2 <- dif*2
+size <- c(1000, 1000, 1000)
+
+sim <- par_reco_sim(dif, size)
+dif_3018g_lc3_e_1 <- sim[,1:30]
+dif_3018g_lc3_e_2 <- sim[,31:60]
+p_3018g_lc3_e <- sim[,61:63]
+
+# Stop the clock and sotre runtime in rt
+rt_3018g_lc3_e = (proc.time() - ptm)[1:3]
+
+# Visualize parameter recovery
+# dif recovery
+dif_viz(dif, dif_3018g_lc3_e_1)
+dif_viz(dif_2, dif_3018g_lc3_e_2)
+
+# classifier parameter recovery
+p_viz(p_3018g_lc3_e, size)
+
+```
+
+
+############################ Parameter Recovery - Unequal Size - Three Latent Classes - Gradient DIF #############################################
+
+## 10 items 2 dif items: 1002g - three latent classes - unequal size design
+```{r}
+# Add time recorder: start the clock
+ptm <- proc.time()
+dif <- d_b_1002g
+dif_2 <- dif*2
+size <- c(1500, 1000, 500)
+
+sim <- par_reco_sim(dif, size)
+dif_1002g_lc3_u_1 <- sim[,1:10]
+dif_1002g_lc3_u_2 <- sim[,11:20]
+p_1002g_lc3_u <- sim[,21:23]
+
+# Stop the clock and sotre runtime in rt
+rt_1002g_lc3_u = (proc.time() - ptm)[1:3]
+
+# Visualize parameter recovery
+# dif recovery
+dif_viz(dif, dif_1002g_lc3_u_1)
+dif_viz(dif_2, dif_1002g_lc3_u_2)
+
+# classifier parameter recovery
+p_viz(p_1002g_lc3_u, size)
+
+```
+
+## 10 items 4 dif items: 1004g - three latent classes - unequal size design
+```{r}
+# Add time recorder: start the clock
+ptm <- proc.time()
+dif <- d_b_1004g
+dif_2 <- dif*2
+size <- c(1500, 1000, 500)
+
+sim <- par_reco_sim(dif, size)
+dif_1004g_lc3_u_1 <- sim[,1:10]
+dif_1004g_lc3_u_2 <- sim[,11:20]
+p_1004g_lc3_u <- sim[,21:23]
+
+# Stop the clock and sotre runtime in rt
+rt_1004g_lc3_u = (proc.time() - ptm)[1:3]
+
+# Visualize parameter recovery
+# dif recovery
+dif_viz(dif, dif_1004g_lc3_u_1)
+dif_viz(dif_2, dif_1004g_lc3_u_2)
+
+# classifier parameter recovery
+p_viz(p_1004g_lc3_u, size)
+
+```
+
+## 10 items 6 dif items: 1006g - three latent classes - unequal size design
+```{r}
+# Add time recorder: start the clock
+ptm <- proc.time()
+dif <- d_b_1006g
+dif_2 <- dif*2
+size <- c(1500, 1000, 500)
+
+sim <- par_reco_sim(dif, size)
+dif_1006g_lc3_u_1 <- sim[,1:10]
+dif_1006g_lc3_u_2 <- sim[,11:20]
+p_1006g_lc3_u <- sim[,21:23]
+
+# Stop the clock and sotre runtime in rt
+rt_1006g_lc3_u = (proc.time() - ptm)[1:3]
+
+# Visualize parameter recovery
+# dif recovery
+dif_viz(dif, dif_1006g_lc3_u_1)
+dif_viz(dif_2, dif_1006g_lc3_u_2)
+
+# classifier parameter recovery
+p_viz(p_1006g_lc3_u, size)
+
+```
+
+## 30 items 6 dif items: 3006g - three latent classes - unequal size design
+```{r, warning = False}
+# Add time recorder: start the clock
+ptm <- proc.time()
+dif <- d_b_3006g
+dif_2 <- dif*2
+size <- c(1500, 1000, 500)
+
+sim <- par_reco_sim(dif, size)
+dif_3006g_lc3_u_1 <- sim[,1:30]
+dif_3006g_lc3_u_2 <- sim[,31:60]
+p_3006g_lc3_u <- sim[,61:63]
+
+# Stop the clock and sotre runtime in rt
+rt_3006g_lc3_u = (proc.time() - ptm)[1:3]
+
+# Visualize parameter recovery
+# dif recovery
+dif_viz(dif, dif_3006g_lc3_u_1)
+dif_viz(dif_2, dif_3006g_lc3_u_2)
+
+# classifier parameter recovery
+p_viz(p_3006g_lc3_u, size)
+
+```
+
+## 30 items 12 dif items: 3012g - three latent classes - unequal size design
+```{r}
+# Add time recorder: start the clock
+ptm <- proc.time()
+dif <- d_b_3012g
+dif_2 <- dif*2
+size <- c(1500, 1000, 500)
+
+sim <- par_reco_sim(dif, size)
+dif_3012g_lc3_u_1 <- sim[,1:30]
+dif_3012g_lc3_u_2 <- sim[,31:60]
+p_3012g_lc3_u <- sim[,61:63]
+
+# Stop the clock and sotre runtime in rt
+rt_3012g_lc3_u = (proc.time() - ptm)[1:3]
+
+# Visualize parameter recovery
+# dif recovery
+dif_viz(dif, dif_3012g_lc3_u_1)
+dif_viz(dif_2, dif_3012g_lc3_u_2)
+
+# classifier parameter recovery
+p_viz(p_3012g_lc3_u, size)
+
+```
+
+## 30 items 18 dif items: 3018g - three latent classes - unequal size design
+```{r}
+# Add time recorder: start the clock
+ptm <- proc.time()
+dif <- d_b_3018g
+dif_2 <- dif*2
+size <- c(1500, 1000, 500)
+
+sim <- par_reco_sim(dif, size)
+dif_3018g_lc3_u_1 <- sim[,1:30]
+dif_3018g_lc3_u_2 <- sim[,31:60]
+p_3018g_lc3_u <- sim[,61:63]
+
+# Stop the clock and sotre runtime in rt
+rt_3018g_lc3_u = (proc.time() - ptm)[1:3]
+
+# Visualize parameter recovery
+# dif recovery
+dif_viz(dif, dif_3018g_lc3_u_1)
+dif_viz(dif_2, dif_3018g_lc3_u_2)
+
+# classifier parameter recovery
+p_viz(p_3018g_lc3_u, size)
+
+```
+
+
+## Create descriptive statistics table for each test type
+```{r}
+table_1002s = gen_dif_table(dif_1002s_lc2_e, dif_1002s_lc2_u, dif_1002s_lc3_e_1, dif_1002s_lc3_u_1, dif_1002s_lc3_e_2, dif_1002s_lc3_u_2)
+
+table_1004s = gen_dif_table(dif_1004s_lc2_e, dif_1004s_lc2_u, dif_1004s_lc3_e_1, dif_1004s_lc3_u_1, dif_1004s_lc3_e_2, dif_1004s_lc3_u_2)
+
+table_1006s = gen_dif_table(dif_1006s_lc2_e, dif_1006s_lc2_u, dif_1006s_lc3_e_1, dif_1006s_lc3_u_1, dif_1006s_lc3_e_2, dif_1006s_lc3_u_2)
+
+table_3006s = gen_dif_table(dif_3006s_lc2_e, dif_3006s_lc2_u, dif_3006s_lc3_e_1, dif_3006s_lc3_u_1, dif_3006s_lc3_e_2, dif_3006s_lc3_u_2)
+
+table_3012s = gen_dif_table(dif_3012s_lc2_e, dif_3012s_lc2_u, dif_3012s_lc3_e_1, dif_3012s_lc3_u_1, dif_3012s_lc3_e_2, dif_3012s_lc3_u_2)
+
+table_3018s = gen_dif_table(dif_3018s_lc2_e, dif_3018s_lc2_u, dif_3018s_lc3_e_1, dif_3018s_lc3_u_1, dif_3018s_lc3_e_2, dif_3018s_lc3_u_2)
+
+table_1002g = gen_dif_table(dif_1002g_lc2_e, dif_1002g_lc2_u, dif_1002g_lc3_e_1, dif_1002g_lc3_u_1, dif_1002g_lc3_e_2, dif_1002g_lc3_u_2)
+
+table_1004g = gen_dif_table(dif_1004g_lc2_e, dif_1004g_lc2_u, dif_1004g_lc3_e_1, dif_1004g_lc3_u_1, dif_1004g_lc3_e_2, dif_1004g_lc3_u_2)
+
+table_1006g = gen_dif_table(dif_1006g_lc2_e, dif_1006g_lc2_u, dif_1006g_lc3_e_1, dif_1006g_lc3_u_1, dif_1006g_lc3_e_2, dif_1006g_lc3_u_2)
+
+table_3006g = gen_dif_table(dif_3006g_lc2_e, dif_3006g_lc2_u, dif_3006g_lc3_e_1, dif_3006g_lc3_u_1, dif_3006g_lc3_e_2, dif_3006g_lc3_u_2)
+
+table_3012g = gen_dif_table(dif_3012g_lc2_e, dif_3012g_lc2_u, dif_3012g_lc3_e_1, dif_3012g_lc3_u_1, dif_3012g_lc3_e_2, dif_3012g_lc3_u_2)
+
+table_3018g = gen_dif_table(dif_3018g_lc2_e, dif_3018g_lc2_u, dif_3018g_lc3_e_1, dif_3018g_lc3_u_1, dif_3018g_lc3_e_2, dif_3018g_lc3_u_2)
+
+# Write tables to csv files for future editing
+write.csv(table_1002s, "table_1002s.csv")
+write.csv(table_1004s, "table_1004s.csv")
+write.csv(table_1006s, "table_1006s.csv")
+
+write.csv(table_1002g, "table_1002g.csv")
+write.csv(table_1004g, "table_1004g.csv")
+write.csv(table_1006g, "table_1006g.csv")
+
+write.csv(table_3006s, "table_3006s.csv")
+write.csv(table_3012s, "table_3012s.csv")
+write.csv(table_3018s, "table_3018s.csv")
+
+write.csv(table_3006g, "table_3006g.csv")
+write.csv(table_3012g, "table_3012g.csv")
+write.csv(table_3018g, "table_3018g.csv")
+
+```
+
+
+# Output classifier parameter recovery plots in a combined way.
+```{r}
+par(mfrow=c(2, 2))
+p_viz(p_1002s_lc2_e, c(1500, 1500))
+p_viz(p_1002s_lc2_u, c(2000, 1000))
+p_viz(p_1002s_lc3_e, c(1000, 1000, 1000))
+p_viz(p_1002s_lc3_u, c(1500, 1000, 500))
+
+p_viz(p_1002g_lc2_e, c(1500, 1500))
+p_viz(p_1002g_lc2_u, c(2000, 1000))
+p_viz(p_1002g_lc3_e, c(1000, 1000, 1000))
+p_viz(p_1002g_lc3_u, c(1500, 1000, 500))
+
+p_viz(p_1004s_lc2_e, c(1500, 1500))
+p_viz(p_1004s_lc2_u, c(2000, 1000))
+p_viz(p_1004s_lc3_e, c(1000, 1000, 1000))
+p_viz(p_1004s_lc3_u, c(1500, 1000, 500))
+
+p_viz(p_1004g_lc2_e, c(1500, 1500))
+p_viz(p_1004g_lc2_u, c(2000, 1000))
+p_viz(p_1004g_lc3_e, c(1000, 1000, 1000))
+p_viz(p_1004g_lc3_u, c(1500, 1000, 500))
+
+p_viz(p_1006s_lc2_e, c(1500, 1500))
+p_viz(p_1006s_lc2_u, c(2000, 1000))
+p_viz(p_1006s_lc3_e, c(1000, 1000, 1000))
+p_viz(p_1006s_lc3_u, c(1500, 1000, 500))
+
+p_viz(p_1006g_lc2_e, c(1500, 1500))
+p_viz(p_1006g_lc2_u, c(2000, 1000))
+p_viz(p_1006g_lc3_e, c(1000, 1000, 1000))
+p_viz(p_1006g_lc3_u, c(1500, 1000, 500))
+
+p_viz(p_3006s_lc2_e, c(1500, 1500))
+p_viz(p_3006s_lc2_u, c(2000, 1000))
+p_viz(p_3006s_lc3_e, c(1000, 1000, 1000))
+p_viz(p_3006s_lc3_u, c(1500, 1000, 500))
+
+p_viz(p_3006g_lc2_e, c(1500, 1500))
+p_viz(p_3006g_lc2_u, c(2000, 1000))
+p_viz(p_3006g_lc3_e, c(1000, 1000, 1000))
+p_viz(p_3006g_lc3_u, c(1500, 1000, 500))
+
+p_viz(p_3012s_lc2_e, c(1500, 1500))
+p_viz(p_3012s_lc2_u, c(2000, 1000))
+p_viz(p_3012s_lc3_e, c(1000, 1000, 1000))
+p_viz(p_3012s_lc3_u, c(1500, 1000, 500))
+
+p_viz(p_3012g_lc2_e, c(1500, 1500))
+p_viz(p_3012g_lc2_u, c(2000, 1000))
+p_viz(p_3012g_lc3_e, c(1000, 1000, 1000))
+p_viz(p_3012g_lc3_u, c(1500, 1000, 500))
+
+p_viz(p_3018s_lc2_e, c(1500, 1500))
+p_viz(p_3018s_lc2_u, c(2000, 1000))
+p_viz(p_3018s_lc3_e, c(1000, 1000, 1000))
+p_viz(p_3018s_lc3_u, c(1500, 1000, 500))
+
+p_viz(p_3018g_lc2_e, c(1500, 1500))
+p_viz(p_3018g_lc2_u, c(2000, 1000))
+p_viz(p_3018g_lc3_e, c(1000, 1000, 1000))
+p_viz(p_3018g_lc3_u, c(1500, 1000, 500))
+
+```
+
+
+```{r}
+rt_table <- rbind(rt_1002s_lc2_e, rt_1002s_lc2_u, rt_1002s_lc3_e, rt_1002s_lc3_u,
+                  rt_1002g_lc2_e, rt_1002g_lc2_u, rt_1002g_lc3_e, rt_1002g_lc3_u,
+                  rt_1004s_lc2_e, rt_1004s_lc2_u, rt_1004s_lc3_e, rt_1004s_lc3_u,
+                  rt_1004g_lc2_e, rt_1004g_lc2_u, rt_1004g_lc3_e, rt_1004g_lc3_u,
+                  rt_1006s_lc2_e, rt_1006s_lc2_u, rt_1006s_lc3_e, rt_1006s_lc3_u,
+                  rt_1006g_lc2_e, rt_1006g_lc2_u, rt_1006g_lc3_e, rt_1006g_lc3_u,
+                  rt_3006s_lc2_e, rt_3006s_lc2_u, rt_3006s_lc3_e, rt_3006s_lc3_u,
+                  rt_3006g_lc2_e, rt_3006g_lc2_u, rt_3006g_lc3_e, rt_3006g_lc3_u,
+                  rt_3012s_lc2_e, rt_3012s_lc2_u, rt_3012s_lc3_e, rt_3012s_lc3_u,
+                  rt_3012g_lc2_e, rt_3012g_lc2_u, rt_3012g_lc3_e, rt_3012g_lc3_u,
+                  rt_3018s_lc2_e, rt_3018s_lc2_u, rt_3018s_lc3_e, rt_3018s_lc3_u,
+                  rt_3018g_lc2_e, rt_3018g_lc2_u, rt_3018g_lc3_e, rt_3018g_lc3_u)
+write.csv(rt_table, "Runtime Table.csv")
+```
+
+
+
+
